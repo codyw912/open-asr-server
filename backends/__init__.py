@@ -63,3 +63,4 @@ def list_loaded_models() -> list[str]:
 # Import backends to trigger registration
 from . import parakeet as _parakeet  # noqa: F401, E402
 from . import whisper as _whisper  # noqa: F401, E402
+from . import lightning_whisper as _lightning_whisper  # noqa: F401, E402
