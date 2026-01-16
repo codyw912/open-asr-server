@@ -8,10 +8,10 @@ except Exception:
 if TestClient is None:
     raise unittest.SkipTest("fastapi not installed")
 
-from openai_asr_server.app import create_app
-from openai_asr_server.backends.base import TranscriptionResult
-from openai_asr_server.config import ServerConfig
-import openai_asr_server.backends as backends
+from open_asr_server.app import create_app
+from open_asr_server.backends.base import TranscriptionResult
+from open_asr_server.config import ServerConfig
+import open_asr_server.backends as backends
 
 
 class FakeBackend:

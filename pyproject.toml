@@ -1,0 +1,40 @@
+[project]
+name = "open-asr-server"
+version = "0.1.0"
+description = "OpenAI-compatible ASR server with pluggable local backends."
+readme = "README.md"
+authors = [
+    { name = "codyw912", email = "32690983+codyw912@users.noreply.github.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "pydantic>=2.0",
+    "python-multipart>=0.0.9",
+    "typer>=0.12",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+parakeet = [
+    "parakeet-mlx",
+]
+whisper = [
+    "mlx-whisper; python_version < '3.12'",
+]
+lightning-whisper = [
+    "lightning-whisper-mlx; python_version < '3.12'",
+]
+dev = [
+    "pytest>=7.4",
+]
+
+[project.scripts]
+open-asr-server = "open_asr_server.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[build-system]
+requires = ["uv_build>=0.9.24,<0.10.0"]
+build-backend = "uv_build"

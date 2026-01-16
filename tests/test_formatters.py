@@ -5,8 +5,8 @@ try:
 except Exception:
     raise unittest.SkipTest("pydantic not installed")
 
-from openai_asr_server.backends.base import Segment, TranscriptionResult, WordSegment
-from openai_asr_server.formatters import (
+from open_asr_server.backends.base import Segment, TranscriptionResult, WordSegment
+from open_asr_server.formatters import (
     to_json,
     to_srt,
     to_text,
