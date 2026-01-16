@@ -49,6 +49,7 @@ class TranscriptionBackend(Protocol):
         language: str | None = None,
         temperature: float = 0.0,
         word_timestamps: bool = False,
+        prompt: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio file and return unified result.
 
@@ -57,6 +58,7 @@ class TranscriptionBackend(Protocol):
             language: Optional ISO-639-1 language code hint.
             temperature: Sampling temperature (0.0-1.0).
             word_timestamps: Whether to include word-level timestamps.
+            prompt: Optional prompt to guide decoding, if supported.
 
         Returns:
             TranscriptionResult with text and optional timestamps.

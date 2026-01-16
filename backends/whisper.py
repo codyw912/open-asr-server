@@ -1,8 +1,25 @@
 """MLX-Whisper transcription backend."""
 
+import inspect
 from pathlib import Path
 
 from .base import Segment, TranscriptionResult, WordSegment
+
+_UNSET = object()
+_PROMPT_PARAM: str | None | object = _UNSET
+
+
+def _get_prompt_param(transcribe_fn) -> str | None:
+    global _PROMPT_PARAM
+    if _PROMPT_PARAM is _UNSET:
+        params = inspect.signature(transcribe_fn).parameters
+        if "prompt" in params:
+            _PROMPT_PARAM = "prompt"
+        elif "initial_prompt" in params:
+            _PROMPT_PARAM = "initial_prompt"
+        else:
+            _PROMPT_PARAM = None
+    return _PROMPT_PARAM
 
 # Default model mapping for short aliases
 WHISPER_MODELS = {
@@ -34,6 +51,7 @@ class WhisperBackend:
         language: str | None = None,
         temperature: float = 0.0,
         word_timestamps: bool = False,
+        prompt: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio file using MLX-Whisper."""
         import mlx_whisper
@@ -42,6 +60,10 @@ class WhisperBackend:
         decode_options = {}
         if language:
             decode_options["language"] = language
+        if prompt:
+            prompt_param = _get_prompt_param(mlx_whisper.transcribe)
+            if prompt_param:
+                decode_options[prompt_param] = prompt
 
         result = mlx_whisper.transcribe(
             str(audio_path),

@@ -1,5 +1,6 @@
 """API route handlers for OpenAI-compatible transcription endpoint."""
 
+import inspect
 import tempfile
 from pathlib import Path
 from typing import Annotated
@@ -62,12 +63,15 @@ async def create_transcription(
         word_timestamps = bool(
             timestamp_granularities and "word" in timestamp_granularities
         )
-        result = backend.transcribe(
-            tmp_path,
-            language=language,
-            temperature=temperature,
-            word_timestamps=word_timestamps,
-        )
+        transcribe_kwargs = {
+            "language": language,
+            "temperature": temperature,
+            "word_timestamps": word_timestamps,
+        }
+        if prompt and "prompt" in inspect.signature(backend.transcribe).parameters:
+            transcribe_kwargs["prompt"] = prompt
+
+        result = backend.transcribe(tmp_path, **transcribe_kwargs)
 
         # Format response based on requested format
         if response_format == "text":

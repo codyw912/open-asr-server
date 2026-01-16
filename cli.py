@@ -1,5 +1,6 @@
 """CLI entry point for the ASR server."""
 
+import os
 from typing import Annotated, Optional
 
 import typer
@@ -27,24 +28,15 @@ def serve(
     """Start the transcription server."""
     import uvicorn
 
-    from .config import ServerConfig
-
-    config = ServerConfig(
-        host=host,
-        port=port,
-        preload_models=preload or [],
-    )
-
-    # Store config in module for app factory to access
-    import openai_asr_server
-
-    openai_asr_server._server_config = config
+    if preload is not None:
+        os.environ["OPENAI_ASR_SERVER_PRELOAD"] = ",".join(preload)
 
     uvicorn.run(
-        "openai_asr_server:app",
+        "openai_asr_server.app:create_app",
         host=host,
         port=port,
         reload=reload,
+        factory=True,
     )
 
 

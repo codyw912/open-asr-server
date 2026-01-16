@@ -64,6 +64,7 @@ class LightningWhisperBackend:
         language: str | None = None,
         temperature: float = 0.0,
         word_timestamps: bool = False,
+        prompt: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio file using Lightning Whisper MLX.
 
@@ -94,9 +95,13 @@ class LightningWhisperBackend:
         if segments:
             duration = segments[-1].end
 
+        language_value = result.get("language")
+        if isinstance(language_value, str) and not language_value:
+            language_value = None
+
         return TranscriptionResult(
             text=text,
-            language=result.get("language", "en"),
+            language=language_value,
             duration=duration,
             words=None,  # Lightning Whisper doesn't support word timestamps
             segments=segments,

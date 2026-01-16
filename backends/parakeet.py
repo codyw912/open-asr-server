@@ -24,11 +24,12 @@ class ParakeetBackend:
         language: str | None = None,
         temperature: float = 0.0,
         word_timestamps: bool = False,
+        prompt: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio file using Parakeet-MLX.
 
-        Note: Parakeet doesn't use language or temperature parameters,
-        but they're accepted for API compatibility.
+        Note: Parakeet doesn't use language, temperature, or prompt
+        parameters, but they're accepted for API compatibility.
         """
         result = self.model.transcribe(str(audio_path))
 

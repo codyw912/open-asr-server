@@ -18,7 +18,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     Returns:
         Configured FastAPI application.
     """
-    config = config or ServerConfig()
+    config = config or ServerConfig.from_env()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
