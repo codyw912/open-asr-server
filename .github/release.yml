@@ -1,0 +1,16 @@
+changelog:
+  categories:
+    - title: "Highlights"
+      labels:
+        - "release"
+        - "feature"
+    - title: "Fixes"
+      labels:
+        - "bug"
+    - title: "Docs & Chore"
+      labels:
+        - "docs"
+        - "chore"
+  exclude:
+    labels:
+      - "skip-changelog"
