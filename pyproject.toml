@@ -6,7 +6,23 @@ readme = "README.md"
 authors = [
     { name = "codyw912", email = "32690983+codyw912@users.noreply.github.com" }
 ]
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+keywords = ["asr", "speech-to-text", "openai", "fastapi", "whisper"]
+urls = {
+    Homepage = "https://github.com/codyw912/open-asr-server",
+    Repository = "https://github.com/codyw912/open-asr-server",
+    Issues = "https://github.com/codyw912/open-asr-server/issues",
+}
 dependencies = [
     "fastapi>=0.110",
     "pydantic>=2.0",
