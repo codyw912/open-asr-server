@@ -18,11 +18,6 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 keywords = ["asr", "speech-to-text", "openai", "fastapi", "whisper"]
-urls = {
-    Homepage = "https://github.com/codyw912/open-asr-server",
-    Repository = "https://github.com/codyw912/open-asr-server",
-    Issues = "https://github.com/codyw912/open-asr-server/issues",
-}
 dependencies = [
     "fastapi>=0.110",
     "pydantic>=2.0",
@@ -30,6 +25,11 @@ dependencies = [
     "typer>=0.12",
     "uvicorn>=0.29",
 ]
+
+[project.urls]
+Homepage = "https://github.com/codyw912/open-asr-server"
+Repository = "https://github.com/codyw912/open-asr-server"
+Issues = "https://github.com/codyw912/open-asr-server/issues"
 
 [project.optional-dependencies]
 parakeet = [
