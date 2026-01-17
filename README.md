@@ -1,5 +1,8 @@
 # Open ASR Server
 
+[![CI](https://github.com/codyw912/open-asr-server/actions/workflows/ci.yml/badge.svg)](https://github.com/codyw912/open-asr-server/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/open-asr-server)](https://pypi.org/project/open-asr-server/)
+
 OpenAI-compatible ASR server with pluggable local transcription backends.
 
 ## Install
@@ -60,4 +63,14 @@ Example:
 curl -s -X POST "http://127.0.0.1:8000/v1/audio/transcriptions" \
   -F "file=@audio.wav" \
   -F "model=whisper-large-v3-turbo"
+```
+
+## Release
+
+```bash
+uv version --bump patch
+uv run --extra dev pytest
+uv build --no-sources
+uv publish --index testpypi --token "$UV_PUBLISH_TOKEN"
+uv publish --token "$UV_PUBLISH_TOKEN"
 ```
