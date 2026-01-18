@@ -3,6 +3,7 @@
 import inspect
 from pathlib import Path
 
+from ..utils.model_cache import resolve_model_path
 from .base import Segment, TranscriptionResult, WordSegment
 
 _UNSET = object()
@@ -20,6 +21,7 @@ def _get_prompt_param(transcribe_fn) -> str | None:
         else:
             _PROMPT_PARAM = None
     return _PROMPT_PARAM
+
 
 # Default model mapping for short aliases
 WHISPER_MODELS = {
@@ -44,6 +46,7 @@ class WhisperBackend:
     def __init__(self, model_id: str = "mlx-community/whisper-large-v3-turbo"):
         # Resolve short aliases to full model IDs
         self.model_id = WHISPER_MODELS.get(model_id, model_id)
+        self.model_path = resolve_model_path(self.model_id)
 
     def transcribe(
         self,
@@ -67,7 +70,7 @@ class WhisperBackend:
 
         result = mlx_whisper.transcribe(
             str(audio_path),
-            path_or_hf_repo=self.model_id,
+            path_or_hf_repo=str(self.model_path),
             temperature=temperature,
             word_timestamps=word_timestamps,
             verbose=False,

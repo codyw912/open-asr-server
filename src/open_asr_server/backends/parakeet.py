@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from ..utils.model_cache import get_model_cache_dir
 from .base import Segment, TranscriptionResult, WordSegment
 
 
@@ -16,7 +17,8 @@ class ParakeetBackend:
         from parakeet_mlx import from_pretrained
 
         self.model_id = model_id
-        self.model = from_pretrained(model_id)
+        cache_dir = get_model_cache_dir()
+        self.model = from_pretrained(model_id, cache_dir=cache_dir)
 
     def transcribe(
         self,

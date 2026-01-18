@@ -44,6 +44,11 @@ Environment variables:
 - `OPEN_ASR_SERVER_API_KEY`: optional shared secret for requests
 - `OPEN_ASR_SERVER_ALLOWED_MODELS`: comma-separated allowed model IDs or patterns
 - `OPEN_ASR_SERVER_MAX_UPLOAD_BYTES`: max upload size in bytes (default: 26214400)
+- `OPEN_ASR_SERVER_MODEL_DIR`: override the Hugging Face cache location for this server
+
+Models default to the Hugging Face cache unless a local path is provided. Use
+`OPEN_ASR_SERVER_MODEL_DIR` if you want a dedicated cache without changing your
+global HF environment.
 
 ## Backend options
 

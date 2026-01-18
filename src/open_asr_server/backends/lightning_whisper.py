@@ -10,30 +10,74 @@ will only register if the package is successfully importable.
 
 from pathlib import Path
 
+from ..utils.model_cache import get_model_cache_dir, resolve_model_path
 from .base import Segment, TranscriptionResult, WordSegment
 
 # Model name mapping - lightning-whisper uses short names
 LIGHTNING_WHISPER_MODELS = {
-    "lightning-whisper-tiny": "tiny",
-    "lightning-whisper-small": "small",
-    "lightning-whisper-base": "base",
-    "lightning-whisper-medium": "medium",
-    "lightning-whisper-large": "large",
-    "lightning-whisper-large-v2": "large-v2",
-    "lightning-whisper-large-v3": "large-v3",
+    "lightning-whisper-tiny": ("mlx-community/whisper-tiny", None),
+    "lightning-whisper-small": ("mlx-community/whisper-small-mlx", None),
+    "lightning-whisper-base": ("mlx-community/whisper-base-mlx", None),
+    "lightning-whisper-medium": ("mlx-community/whisper-medium-mlx", None),
+    "lightning-whisper-large": ("mlx-community/whisper-large-mlx", None),
+    "lightning-whisper-large-v2": ("mlx-community/whisper-large-v2-mlx", None),
+    "lightning-whisper-large-v3": ("mlx-community/whisper-large-v3-mlx", None),
     # Distilled models (faster)
-    "lightning-whisper-distil-small.en": "distil-small.en",
-    "lightning-whisper-distil-medium.en": "distil-medium.en",
-    "lightning-whisper-distil-large-v2": "distil-large-v2",
-    "lightning-whisper-distil-large-v3": "distil-large-v3",
+    "lightning-whisper-distil-small.en": (
+        "mustafaaljadery/distil-whisper-mlx",
+        "mlx_models/distil-small.en",
+    ),
+    "lightning-whisper-distil-medium.en": (
+        "mustafaaljadery/distil-whisper-mlx",
+        "mlx_models/distil-medium.en",
+    ),
+    "lightning-whisper-distil-large-v2": (
+        "mustafaaljadery/distil-whisper-mlx",
+        "mlx_models/distil-large-v2",
+    ),
+    "lightning-whisper-distil-large-v3": (
+        "mustafaaljadery/distil-whisper-mlx",
+        "mlx_models/distil-large-v3",
+    ),
 }
+
+
+def _download_lightning_subdir(repo_id: str, subdir: str) -> Path:
+    cache_dir = get_model_cache_dir()
+    cache_dir_value = str(cache_dir) if cache_dir is not None else None
+
+    from huggingface_hub import hf_hub_download
+
+    config_path = hf_hub_download(
+        repo_id=repo_id,
+        filename=f"{subdir}/config.json",
+        cache_dir=cache_dir_value,
+    )
+    hf_hub_download(
+        repo_id=repo_id,
+        filename=f"{subdir}/weights.npz",
+        cache_dir=cache_dir_value,
+    )
+    return Path(config_path).parent
+
+
+def _resolve_lightning_model_path(model_id: str) -> Path:
+    candidate = Path(model_id).expanduser()
+    if candidate.exists():
+        return candidate
+
+    repo_id, subdir = LIGHTNING_WHISPER_MODELS.get(model_id, (model_id, None))
+    if subdir:
+        return _download_lightning_subdir(repo_id, subdir)
+
+    return resolve_model_path(repo_id)
 
 
 class LightningWhisperBackend:
     """Lightning Whisper MLX transcription backend.
 
-    Optimized Whisper implementation with batched decoding,
-    distilled models, and quantization support.
+    Optimized Whisper implementation with batched decoding
+    and distilled models.
     """
 
     def __init__(
@@ -42,21 +86,14 @@ class LightningWhisperBackend:
         batch_size: int = 12,
         quantization: str | None = None,
     ):
-        from lightning_whisper_mlx import LightningWhisperMLX
-
-        # Resolve model name
-        model_name = LIGHTNING_WHISPER_MODELS.get(model_id, model_id)
-        # Strip prefix if someone passes the full name
-        if model_name.startswith("lightning-whisper-"):
-            model_name = model_name[len("lightning-whisper-") :]
+        if quantization is not None:
+            raise ValueError(
+                "Quantization selection is not supported; use an explicit HF repo ID."
+            )
 
         self.model_id = model_id
-        self.model_name = model_name
-        self.whisper = LightningWhisperMLX(
-            model=model_name,
-            batch_size=batch_size,
-            quant=quantization,
-        )
+        self.batch_size = batch_size
+        self.model_path = _resolve_lightning_model_path(model_id)
 
     def transcribe(
         self,
@@ -69,9 +106,22 @@ class LightningWhisperBackend:
         """Transcribe audio file using Lightning Whisper MLX.
 
         Note: Lightning Whisper has a simpler API than standard mlx-whisper.
-        It doesn't support word-level timestamps or language hints directly.
+        It doesn't support word-level timestamps or prompts directly.
         """
-        result = self.whisper.transcribe(audio_path=str(audio_path))
+        from lightning_whisper_mlx.transcribe import transcribe_audio
+
+        decode_options = {}
+        if language:
+            decode_options["language"] = language
+
+        result = transcribe_audio(
+            str(audio_path),
+            path_or_hf_repo=str(self.model_path),
+            temperature=temperature,
+            word_timestamps=word_timestamps,
+            batch_size=self.batch_size,
+            **decode_options,
+        )
 
         # Lightning Whisper returns a simpler result format
         text = result.get("text", "").strip()
