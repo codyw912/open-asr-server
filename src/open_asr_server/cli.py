@@ -34,7 +34,7 @@ def serve(
     import uvicorn
 
     if preload is not None:
-        os.environ["OPENAI_ASR_SERVER_PRELOAD"] = ",".join(preload)
+        os.environ["OPEN_ASR_SERVER_PRELOAD"] = ",".join(preload)
 
     uvicorn.run(
         "open_asr_server.app:create_app",

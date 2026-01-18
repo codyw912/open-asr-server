@@ -39,11 +39,11 @@ uv tool run open-asr-server serve --host 127.0.0.1 --port 8000
 
 Environment variables:
 
-- `OPENAI_ASR_SERVER_DEFAULT_MODEL`: default model ID for requests
-- `OPENAI_ASR_SERVER_PRELOAD`: comma-separated models to preload at startup
-- `OPENAI_ASR_SERVER_API_KEY`: optional shared secret for requests
-- `OPENAI_ASR_SERVER_ALLOWED_MODELS`: comma-separated allowed model IDs or patterns
-- `OPENAI_ASR_SERVER_MAX_UPLOAD_BYTES`: max upload size in bytes (default: 26214400)
+- `OPEN_ASR_SERVER_DEFAULT_MODEL`: default model ID for requests
+- `OPEN_ASR_SERVER_PRELOAD`: comma-separated models to preload at startup
+- `OPEN_ASR_SERVER_API_KEY`: optional shared secret for requests
+- `OPEN_ASR_SERVER_ALLOWED_MODELS`: comma-separated allowed model IDs or patterns
+- `OPEN_ASR_SERVER_MAX_UPLOAD_BYTES`: max upload size in bytes (default: 26214400)
 
 ## Backend options
 
@@ -74,7 +74,7 @@ curl -s -X POST "http://127.0.0.1:8000/v1/audio/transcriptions" \
 ## Security
 
 This server is designed for trusted networks. If you expose it publicly, enable
-`OPENAI_ASR_SERVER_API_KEY` and front it with a reverse proxy that provides
+`OPEN_ASR_SERVER_API_KEY` and front it with a reverse proxy that provides
 TLS and rate limiting.
 
 API key headers:
@@ -82,7 +82,7 @@ API key headers:
 - `Authorization: Bearer <token>`
 - `X-API-Key: <token>`
 
-Use `OPENAI_ASR_SERVER_ALLOWED_MODELS` to limit which model IDs can be loaded
+Use `OPEN_ASR_SERVER_ALLOWED_MODELS` to limit which model IDs can be loaded
 and prevent unbounded downloads.
 
 ## Release

@@ -35,16 +35,16 @@ class ServerConfig:
     def from_env(cls) -> "ServerConfig":
         """Create configuration from environment variables."""
         default_model = os.getenv(
-            "OPENAI_ASR_SERVER_DEFAULT_MODEL",
+            "OPEN_ASR_SERVER_DEFAULT_MODEL",
             cls().default_model,
         )
-        preload_models = _parse_env_list(os.getenv("OPENAI_ASR_SERVER_PRELOAD"))
-        allowed_models = _parse_env_list(os.getenv("OPENAI_ASR_SERVER_ALLOWED_MODELS"))
+        preload_models = _parse_env_list(os.getenv("OPEN_ASR_SERVER_PRELOAD"))
+        allowed_models = _parse_env_list(os.getenv("OPEN_ASR_SERVER_ALLOWED_MODELS"))
         max_upload_bytes = _parse_env_int(
-            os.getenv("OPENAI_ASR_SERVER_MAX_UPLOAD_BYTES"),
+            os.getenv("OPEN_ASR_SERVER_MAX_UPLOAD_BYTES"),
             cls().max_upload_bytes,
         )
-        api_key = os.getenv("OPENAI_ASR_SERVER_API_KEY")
+        api_key = os.getenv("OPEN_ASR_SERVER_API_KEY")
         return cls(
             preload_models=preload_models,
             default_model=default_model,
