@@ -35,6 +35,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.state.config = config
     app.include_router(router)
 
     return app

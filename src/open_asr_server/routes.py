@@ -1,22 +1,80 @@
 """API route handlers for OpenAI-compatible transcription endpoint."""
 
+import fnmatch
 import inspect
+import secrets
 import tempfile
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from .backends import get_backend, list_loaded_models, list_registered_patterns
+from .config import ServerConfig
 from .formatters import to_json, to_srt, to_text, to_verbose_json, to_vtt
 from .models import ModelInfo, ModelListResponse, ResponseFormat
 
 router = APIRouter()
 
+_CHUNK_SIZE = 1024 * 1024
+
+
+def _matches_any(model: str, patterns: list[str]) -> bool:
+    return any(fnmatch.fnmatch(model, pattern) for pattern in patterns)
+
+
+def _extract_api_key(request: Request) -> str | None:
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        scheme, _, token = auth_header.partition(" ")
+        if scheme.lower() == "bearer" and token:
+            return token
+    return request.headers.get("X-API-Key")
+
+
+def _ensure_authorized(request: Request, api_key: str | None) -> None:
+    if not api_key:
+        return
+    provided = _extract_api_key(request)
+    if not provided or not secrets.compare_digest(provided, api_key):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _ensure_model_allowed(model: str, allowed: list[str]) -> None:
+    if allowed and not _matches_any(model, allowed):
+        raise HTTPException(status_code=403, detail="Model not allowed")
+
+
+async def _save_upload_to_tempfile(
+    file: UploadFile, max_upload_bytes: int | None
+) -> Path:
+    suffix = Path(file.filename).suffix if file.filename else ".wav"
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp_path = Path(tmp.name)
+    size = 0
+    try:
+        while True:
+            chunk = await file.read(_CHUNK_SIZE)
+            if not chunk:
+                break
+            size += len(chunk)
+            if max_upload_bytes is not None and size > max_upload_bytes:
+                raise HTTPException(status_code=413, detail="File too large")
+            tmp.write(chunk)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    finally:
+        tmp.close()
+        await file.close()
+
+    return tmp_path
+
 
 @router.post("/v1/audio/transcriptions")
 async def create_transcription(
+    request: Request,
     file: Annotated[UploadFile, File(description="The audio file to transcribe")],
     model: Annotated[str, Form(description="Model ID to use for transcription")],
     language: Annotated[
@@ -43,6 +101,10 @@ async def create_transcription(
 
     This endpoint is compatible with the OpenAI Whisper API.
     """
+    config: ServerConfig = request.app.state.config
+    _ensure_authorized(request, config.api_key)
+    _ensure_model_allowed(model, config.allowed_models)
+
     # Get backend for model
     backend = get_backend(model)
     if not backend:
@@ -52,11 +114,7 @@ async def create_transcription(
         )
 
     # Save upload to temp file
-    suffix = Path(file.filename).suffix if file.filename else ".wav"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
+    tmp_path = await _save_upload_to_tempfile(file, config.max_upload_bytes)
 
     try:
         # Transcribe
@@ -98,14 +156,27 @@ async def create_transcription(
 
 
 @router.get("/v1/models", response_model=ModelListResponse)
-async def list_models():
+async def list_models(request: Request):
     """List available models.
 
     Returns registered model patterns and currently loaded model instances.
     """
+    config: ServerConfig = request.app.state.config
+    _ensure_authorized(request, config.api_key)
+
     # Combine registered patterns and loaded models
     patterns = list_registered_patterns()
     loaded = list_loaded_models()
+
+    if config.allowed_models:
+        patterns = [
+            pattern
+            for pattern in patterns
+            if _matches_any(pattern, config.allowed_models)
+        ]
+        loaded = [
+            model for model in loaded if _matches_any(model, config.allowed_models)
+        ]
 
     # Create model info for each unique entry
     all_models = set(patterns + loaded)

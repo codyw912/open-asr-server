@@ -41,8 +41,14 @@ Environment variables:
 
 - `OPENAI_ASR_SERVER_DEFAULT_MODEL`: default model ID for requests
 - `OPENAI_ASR_SERVER_PRELOAD`: comma-separated models to preload at startup
+- `OPENAI_ASR_SERVER_API_KEY`: optional shared secret for requests
+- `OPENAI_ASR_SERVER_ALLOWED_MODELS`: comma-separated allowed model IDs or patterns
+- `OPENAI_ASR_SERVER_MAX_UPLOAD_BYTES`: max upload size in bytes (default: 26214400)
 
 ## Backend options
+
+All backends are MLX-based today (Apple Silicon/macOS). Non-MLX backends are
+planned, but not yet supported.
 
 Model IDs determine which backend is used:
 
@@ -64,6 +70,20 @@ curl -s -X POST "http://127.0.0.1:8000/v1/audio/transcriptions" \
   -F "file=@audio.wav" \
   -F "model=whisper-large-v3-turbo"
 ```
+
+## Security
+
+This server is designed for trusted networks. If you expose it publicly, enable
+`OPENAI_ASR_SERVER_API_KEY` and front it with a reverse proxy that provides
+TLS and rate limiting.
+
+API key headers:
+
+- `Authorization: Bearer <token>`
+- `X-API-Key: <token>`
+
+Use `OPENAI_ASR_SERVER_ALLOWED_MODELS` to limit which model IDs can be loaded
+and prevent unbounded downloads.
 
 ## Release
 
