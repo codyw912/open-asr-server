@@ -12,3 +12,7 @@ wheels/
 # Local assets and model downloads
 audio_files/
 mlx_models/
+
+# Coverage outputs
+.coverage
+htmlcov/
