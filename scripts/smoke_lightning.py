@@ -13,8 +13,7 @@ from open_asr_server.backends.lightning_whisper import LightningWhisperBackend
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke test Lightning Whisper backend")
     parser.add_argument(
-        "--audio",
-        default="audio_files/harvard.wav",
+        "audio",
         help="Path to an audio file",
     )
     parser.add_argument(

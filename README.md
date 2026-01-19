@@ -52,6 +52,22 @@ Models default to the Hugging Face cache unless a local path is provided. Use
 global HF environment. Use `OPEN_ASR_SERVER_HF_TOKEN` to authenticate downloads
 without setting global HF environment variables.
 
+## Sample audio
+
+Two short clips are included in `samples/` for quick smoke tests:
+
+- `samples/jfk_0_5.flac`
+- `samples/jfk_5_10.flac`
+
+They are derived from `tests/jfk.flac` in the OpenAI Whisper repo (MIT); the
+original JFK speech is public domain.
+
+```bash
+uv run --extra parakeet scripts/smoke_parakeet.py samples/jfk_0_5.flac
+uv run --python 3.11 --extra whisper scripts/smoke_whisper.py samples/jfk_0_5.flac
+uv run --python 3.11 --extra lightning-whisper scripts/smoke_lightning.py samples/jfk_0_5.flac
+```
+
 ## Backend options
 
 All backends are MLX-based today (Apple Silicon/macOS). Non-MLX backends are
