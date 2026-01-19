@@ -33,6 +33,15 @@ uv run --python 3.11 --extra whisper -- open-asr-server serve --host 127.0.0.1 -
 
 ## Run
 
+Install at least one backend extra before running (the default model uses
+Parakeet MLX):
+
+```bash
+uv tool install "open-asr-server[parakeet]"
+```
+
+Then start the server:
+
 ```bash
 uv tool run open-asr-server serve --host 127.0.0.1 --port 8000
 ```
