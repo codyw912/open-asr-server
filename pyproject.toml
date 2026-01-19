@@ -20,6 +20,7 @@ classifiers = [
 keywords = ["asr", "speech-to-text", "openai", "fastapi", "whisper"]
 dependencies = [
     "fastapi>=0.110",
+    "huggingface-hub>=0.23",
     "pydantic>=2.0",
     "python-multipart>=0.0.9",
     "typer>=0.12",
