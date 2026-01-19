@@ -16,3 +16,6 @@ mlx_models/
 # Coverage outputs
 .coverage
 htmlcov/
+
+# Local-only notes
+.local/

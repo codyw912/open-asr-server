@@ -45,10 +45,28 @@ Environment variables:
 - `OPEN_ASR_SERVER_ALLOWED_MODELS`: comma-separated allowed model IDs or patterns
 - `OPEN_ASR_SERVER_MAX_UPLOAD_BYTES`: max upload size in bytes (default: 26214400)
 - `OPEN_ASR_SERVER_MODEL_DIR`: override the Hugging Face cache location for this server
+- `OPEN_ASR_SERVER_HF_TOKEN`: optional Hugging Face token for gated/private models
 
 Models default to the Hugging Face cache unless a local path is provided. Use
 `OPEN_ASR_SERVER_MODEL_DIR` if you want a dedicated cache without changing your
-global HF environment.
+global HF environment. Use `OPEN_ASR_SERVER_HF_TOKEN` to authenticate downloads
+without setting global HF environment variables.
+
+## Sample audio
+
+Two short clips are included in `samples/` for quick smoke tests:
+
+- `samples/jfk_0_5.flac`
+- `samples/jfk_5_10.flac`
+
+They are derived from `tests/jfk.flac` in the OpenAI Whisper repo (MIT); the
+original JFK speech is public domain.
+
+```bash
+uv run --extra parakeet scripts/smoke_parakeet.py samples/jfk_0_5.flac
+uv run --python 3.11 --extra whisper scripts/smoke_whisper.py samples/jfk_0_5.flac
+uv run --python 3.11 --extra lightning-whisper scripts/smoke_lightning.py samples/jfk_0_5.flac
+```
 
 ## Backend options
 

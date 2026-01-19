@@ -2,8 +2,52 @@
 
 from pathlib import Path
 
-from ..utils.model_cache import get_model_cache_dir
+from ..utils.model_cache import get_hf_token, get_model_cache_dir
 from .base import Segment, TranscriptionResult, WordSegment
+
+
+def _load_parakeet_model(model_id: str):
+    from parakeet_mlx import from_pretrained
+
+    cache_dir = get_model_cache_dir()
+    token = get_hf_token()
+
+    candidate = Path(model_id).expanduser()
+    if candidate.exists() or token is None:
+        return from_pretrained(model_id, cache_dir=cache_dir)
+
+    cache_dir_value = str(cache_dir) if cache_dir is not None else None
+
+    from huggingface_hub import hf_hub_download
+    from mlx.utils import tree_flatten, tree_unflatten
+    import mlx.core as mx
+    from parakeet_mlx.utils import from_config
+    import json
+
+    config_path = hf_hub_download(
+        repo_id=model_id,
+        filename="config.json",
+        cache_dir=cache_dir_value,
+        token=token,
+    )
+    weights_path = hf_hub_download(
+        repo_id=model_id,
+        filename="model.safetensors",
+        cache_dir=cache_dir_value,
+        token=token,
+    )
+
+    with open(config_path, "r") as handle:
+        config = json.load(handle)
+
+    model = from_config(config)
+    model.load_weights(weights_path)
+
+    curr_weights = dict(tree_flatten(model.parameters()))
+    curr_weights = [(k, v.astype(mx.bfloat16)) for k, v in curr_weights.items()]
+    model.update(tree_unflatten(curr_weights))
+
+    return model
 
 
 class ParakeetBackend:
@@ -14,11 +58,8 @@ class ParakeetBackend:
     """
 
     def __init__(self, model_id: str = "mlx-community/parakeet-tdt-0.6b-v3"):
-        from parakeet_mlx import from_pretrained
-
         self.model_id = model_id
-        cache_dir = get_model_cache_dir()
-        self.model = from_pretrained(model_id, cache_dir=cache_dir)
+        self.model = _load_parakeet_model(model_id)
 
     def transcribe(
         self,

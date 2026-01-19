@@ -10,7 +10,7 @@ will only register if the package is successfully importable.
 
 from pathlib import Path
 
-from ..utils.model_cache import get_model_cache_dir, resolve_model_path
+from ..utils.model_cache import get_hf_token, get_model_cache_dir, resolve_model_path
 from .base import Segment, TranscriptionResult, WordSegment
 
 # Model name mapping - lightning-whisper uses short names
@@ -45,6 +45,7 @@ LIGHTNING_WHISPER_MODELS = {
 def _download_lightning_subdir(repo_id: str, subdir: str) -> Path:
     cache_dir = get_model_cache_dir()
     cache_dir_value = str(cache_dir) if cache_dir is not None else None
+    token = get_hf_token()
 
     from huggingface_hub import hf_hub_download
 
@@ -52,11 +53,13 @@ def _download_lightning_subdir(repo_id: str, subdir: str) -> Path:
         repo_id=repo_id,
         filename=f"{subdir}/config.json",
         cache_dir=cache_dir_value,
+        token=token,
     )
     hf_hub_download(
         repo_id=repo_id,
         filename=f"{subdir}/weights.npz",
         cache_dir=cache_dir_value,
+        token=token,
     )
     return Path(config_path).parent
 
