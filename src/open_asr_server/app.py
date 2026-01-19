@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from .backends import preload_backend
 from .config import ServerConfig
 from .routes import router
+from .utils.rate_limit import RateLimiter
 
 
 def create_app(config: ServerConfig | None = None) -> FastAPI:
@@ -36,6 +37,11 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     )
 
     app.state.config = config
+    app.state.rate_limiter = (
+        RateLimiter(config.rate_limit_per_minute)
+        if config.rate_limit_per_minute
+        else None
+    )
     app.include_router(router)
 
     return app

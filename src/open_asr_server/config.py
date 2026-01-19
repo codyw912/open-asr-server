@@ -30,6 +30,7 @@ class ServerConfig:
     max_upload_bytes: int | None = 25 * 1024 * 1024
     allowed_models: list[str] = field(default_factory=list)
     api_key: str | None = None
+    rate_limit_per_minute: int | None = None
 
     @classmethod
     def from_env(cls) -> "ServerConfig":
@@ -45,10 +46,15 @@ class ServerConfig:
             cls().max_upload_bytes,
         )
         api_key = os.getenv("OPEN_ASR_SERVER_API_KEY")
+        rate_limit_per_minute = _parse_env_int(
+            os.getenv("OPEN_ASR_SERVER_RATE_LIMIT_PER_MINUTE"),
+            cls().rate_limit_per_minute,
+        )
         return cls(
             preload_models=preload_models,
             default_model=default_model,
             max_upload_bytes=max_upload_bytes,
             allowed_models=allowed_models,
             api_key=api_key,
+            rate_limit_per_minute=rate_limit_per_minute,
         )

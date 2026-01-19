@@ -46,6 +46,23 @@ def _ensure_model_allowed(model: str, allowed: list[str]) -> None:
         raise HTTPException(status_code=403, detail="Model not allowed")
 
 
+def _rate_limit_key(request: Request, api_key: str | None) -> str:
+    if api_key:
+        return _extract_api_key(request) or "unknown"
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _ensure_rate_limit(request: Request, api_key: str | None) -> None:
+    limiter = getattr(request.app.state, "rate_limiter", None)
+    if not limiter:
+        return
+    key = _rate_limit_key(request, api_key)
+    if not limiter.allow(key):
+        raise HTTPException(status_code=429, detail="Too many requests")
+
+
 async def _save_upload_to_tempfile(
     file: UploadFile, max_upload_bytes: int | None
 ) -> Path:
@@ -103,6 +120,7 @@ async def create_transcription(
     """
     config: ServerConfig = request.app.state.config
     _ensure_authorized(request, config.api_key)
+    _ensure_rate_limit(request, config.api_key)
     _ensure_model_allowed(model, config.allowed_models)
 
     # Get backend for model
@@ -163,6 +181,7 @@ async def list_models(request: Request):
     """
     config: ServerConfig = request.app.state.config
     _ensure_authorized(request, config.api_key)
+    _ensure_rate_limit(request, config.api_key)
 
     # Combine registered patterns and loaded models
     patterns = list_registered_patterns()

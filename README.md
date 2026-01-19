@@ -44,6 +44,7 @@ Environment variables:
 - `OPEN_ASR_SERVER_API_KEY`: optional shared secret for requests
 - `OPEN_ASR_SERVER_ALLOWED_MODELS`: comma-separated allowed model IDs or patterns
 - `OPEN_ASR_SERVER_MAX_UPLOAD_BYTES`: max upload size in bytes (default: 26214400)
+- `OPEN_ASR_SERVER_RATE_LIMIT_PER_MINUTE`: optional per-client request limit (off by default)
 - `OPEN_ASR_SERVER_MODEL_DIR`: override the Hugging Face cache location for this server
 - `OPEN_ASR_SERVER_HF_TOKEN`: optional Hugging Face token for gated/private models
 
@@ -98,7 +99,9 @@ curl -s -X POST "http://127.0.0.1:8000/v1/audio/transcriptions" \
 
 This server is designed for trusted networks. If you expose it publicly, enable
 `OPEN_ASR_SERVER_API_KEY` and front it with a reverse proxy that provides
-TLS and rate limiting.
+TLS and rate limiting. `OPEN_ASR_SERVER_RATE_LIMIT_PER_MINUTE` offers a simple
+in-process limiter for single-instance use, but it is not a substitute for
+production-grade rate limiting.
 
 API key headers:
 

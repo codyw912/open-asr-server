@@ -87,6 +87,15 @@ class RouteTests(unittest.TestCase):
         response = client.get("/v1/models", headers={"Authorization": "Bearer secret"})
         self.assertEqual(response.status_code, 200)
 
+    def test_rate_limit_enforced(self):
+        client = self._client(ServerConfig(preload_models=[], rate_limit_per_minute=1))
+
+        first = client.get("/v1/models")
+        second = client.get("/v1/models")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+
     def test_model_allowlist_blocks_transcription(self):
         self._register_backend("test-model")
         client = self._client(
