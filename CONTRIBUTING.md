@@ -16,6 +16,16 @@ uv sync --extra dev
 uv run --extra dev pytest
 ```
 
+## Testing
+
+- Run coverage locally:
+
+```bash
+uv run --extra dev pytest --cov=open_asr_server --cov-report=term
+```
+
+- Keep tests hermetic by avoiding reliance on local env vars, caches, or model downloads.
+
 ## Pull requests
 
 - Keep changes focused and include a clear description.
