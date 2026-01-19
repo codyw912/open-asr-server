@@ -1,6 +1,8 @@
 """API route handlers for OpenAI-compatible transcription endpoint."""
 
+import asyncio
 import fnmatch
+import functools
 import inspect
 import secrets
 import tempfile
@@ -61,6 +63,24 @@ def _ensure_rate_limit(request: Request, api_key: str | None) -> None:
     key = _rate_limit_key(request, api_key)
     if not limiter.allow(key):
         raise HTTPException(status_code=429, detail="Too many requests")
+
+
+async def _run_transcription(
+    backend,
+    audio_path: Path,
+    transcribe_kwargs: dict,
+    timeout_seconds: float | None,
+    executor,
+):
+    loop = asyncio.get_running_loop()
+    func = functools.partial(backend.transcribe, audio_path, **transcribe_kwargs)
+    task = loop.run_in_executor(executor, func)
+    if timeout_seconds:
+        try:
+            return await asyncio.wait_for(task, timeout_seconds)
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="Transcription timed out")
+    return await task
 
 
 async def _save_upload_to_tempfile(
@@ -147,7 +167,14 @@ async def create_transcription(
         if prompt and "prompt" in inspect.signature(backend.transcribe).parameters:
             transcribe_kwargs["prompt"] = prompt
 
-        result = backend.transcribe(tmp_path, **transcribe_kwargs)
+        executor = getattr(request.app.state, "transcribe_executor", None)
+        result = await _run_transcription(
+            backend,
+            tmp_path,
+            transcribe_kwargs,
+            config.transcribe_timeout_seconds,
+            executor,
+        )
 
         # Format response based on requested format
         if response_format == "text":

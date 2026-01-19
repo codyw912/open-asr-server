@@ -1,3 +1,4 @@
+import time
 import unittest
 
 try:
@@ -95,6 +96,31 @@ class RouteTests(unittest.TestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)
+
+    def test_transcription_timeout(self):
+        class SlowBackend(FakeBackend):
+            def transcribe(
+                self,
+                audio_path,
+                language=None,
+                temperature=0.0,
+                word_timestamps=False,
+                prompt=None,
+            ):
+                time.sleep(0.05)
+                return TranscriptionResult(text="slow", language=language, duration=0.0)
+
+        self._register_backend("test-model", SlowBackend())
+        client = self._client(
+            ServerConfig(preload_models=[], transcribe_timeout_seconds=0.01)
+        )
+
+        files = {"file": ("audio.wav", b"test audio", "audio/wav")}
+        data = {"model": "test-model", "response_format": "json"}
+        response = client.post("/v1/audio/transcriptions", data=data, files=files)
+
+        self.assertEqual(response.status_code, 504)
+        self.assertEqual(response.json(), {"detail": "Transcription timed out"})
 
     def test_model_allowlist_blocks_transcription(self):
         self._register_backend("test-model")

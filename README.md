@@ -45,6 +45,8 @@ Environment variables:
 - `OPEN_ASR_SERVER_ALLOWED_MODELS`: comma-separated allowed model IDs or patterns
 - `OPEN_ASR_SERVER_MAX_UPLOAD_BYTES`: max upload size in bytes (default: 26214400)
 - `OPEN_ASR_SERVER_RATE_LIMIT_PER_MINUTE`: optional per-client request limit (off by default)
+- `OPEN_ASR_SERVER_TRANSCRIBE_TIMEOUT_SECONDS`: optional transcription timeout (off by default)
+- `OPEN_ASR_SERVER_TRANSCRIBE_WORKERS`: optional thread pool size for transcriptions
 - `OPEN_ASR_SERVER_MODEL_DIR`: override the Hugging Face cache location for this server
 - `OPEN_ASR_SERVER_HF_TOKEN`: optional Hugging Face token for gated/private models
 
@@ -52,6 +54,10 @@ Models default to the Hugging Face cache unless a local path is provided. Use
 `OPEN_ASR_SERVER_MODEL_DIR` if you want a dedicated cache without changing your
 global HF environment. Use `OPEN_ASR_SERVER_HF_TOKEN` to authenticate downloads
 without setting global HF environment variables.
+
+Use `OPEN_ASR_SERVER_TRANSCRIBE_TIMEOUT_SECONDS` to bound long transcriptions.
+If you set `OPEN_ASR_SERVER_TRANSCRIBE_WORKERS`, transcriptions run in a
+background thread pool instead of the event loop.
 
 ## Sample audio
 
