@@ -44,6 +44,9 @@ Environment variables:
 - `OPEN_ASR_SERVER_API_KEY`: optional shared secret for requests
 - `OPEN_ASR_SERVER_ALLOWED_MODELS`: comma-separated allowed model IDs or patterns
 - `OPEN_ASR_SERVER_MAX_UPLOAD_BYTES`: max upload size in bytes (default: 26214400)
+- `OPEN_ASR_SERVER_RATE_LIMIT_PER_MINUTE`: optional per-client request limit (off by default)
+- `OPEN_ASR_SERVER_TRANSCRIBE_TIMEOUT_SECONDS`: optional transcription timeout (off by default)
+- `OPEN_ASR_SERVER_TRANSCRIBE_WORKERS`: optional thread pool size for transcriptions
 - `OPEN_ASR_SERVER_MODEL_DIR`: override the Hugging Face cache location for this server
 - `OPEN_ASR_SERVER_HF_TOKEN`: optional Hugging Face token for gated/private models
 
@@ -51,6 +54,10 @@ Models default to the Hugging Face cache unless a local path is provided. Use
 `OPEN_ASR_SERVER_MODEL_DIR` if you want a dedicated cache without changing your
 global HF environment. Use `OPEN_ASR_SERVER_HF_TOKEN` to authenticate downloads
 without setting global HF environment variables.
+
+Use `OPEN_ASR_SERVER_TRANSCRIBE_TIMEOUT_SECONDS` to bound long transcriptions.
+If you set `OPEN_ASR_SERVER_TRANSCRIBE_WORKERS`, transcriptions run in a
+background thread pool instead of the event loop.
 
 ## Sample audio
 
@@ -98,7 +105,9 @@ curl -s -X POST "http://127.0.0.1:8000/v1/audio/transcriptions" \
 
 This server is designed for trusted networks. If you expose it publicly, enable
 `OPEN_ASR_SERVER_API_KEY` and front it with a reverse proxy that provides
-TLS and rate limiting.
+TLS and rate limiting. `OPEN_ASR_SERVER_RATE_LIMIT_PER_MINUTE` offers a simple
+in-process limiter for single-instance use, but it is not a substitute for
+production-grade rate limiting.
 
 API key headers:
 
@@ -106,7 +115,9 @@ API key headers:
 - `X-API-Key: <token>`
 
 Use `OPEN_ASR_SERVER_ALLOWED_MODELS` to limit which model IDs can be loaded
-and prevent unbounded downloads.
+and prevent unbounded downloads. Avoid logging request bodies or filenames if
+those may contain sensitive data, and review reverse-proxy access logs for any
+retention concerns.
 
 ## Release
 

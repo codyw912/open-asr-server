@@ -1,6 +1,8 @@
 """API route handlers for OpenAI-compatible transcription endpoint."""
 
+import asyncio
 import fnmatch
+import functools
 import inspect
 import secrets
 import tempfile
@@ -44,6 +46,41 @@ def _ensure_authorized(request: Request, api_key: str | None) -> None:
 def _ensure_model_allowed(model: str, allowed: list[str]) -> None:
     if allowed and not _matches_any(model, allowed):
         raise HTTPException(status_code=403, detail="Model not allowed")
+
+
+def _rate_limit_key(request: Request, api_key: str | None) -> str:
+    if api_key:
+        return _extract_api_key(request) or "unknown"
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _ensure_rate_limit(request: Request, api_key: str | None) -> None:
+    limiter = getattr(request.app.state, "rate_limiter", None)
+    if not limiter:
+        return
+    key = _rate_limit_key(request, api_key)
+    if not limiter.allow(key):
+        raise HTTPException(status_code=429, detail="Too many requests")
+
+
+async def _run_transcription(
+    backend,
+    audio_path: Path,
+    transcribe_kwargs: dict,
+    timeout_seconds: float | None,
+    executor,
+):
+    loop = asyncio.get_running_loop()
+    func = functools.partial(backend.transcribe, audio_path, **transcribe_kwargs)
+    task = loop.run_in_executor(executor, func)
+    if timeout_seconds:
+        try:
+            return await asyncio.wait_for(task, timeout_seconds)
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="Transcription timed out")
+    return await task
 
 
 async def _save_upload_to_tempfile(
@@ -103,6 +140,7 @@ async def create_transcription(
     """
     config: ServerConfig = request.app.state.config
     _ensure_authorized(request, config.api_key)
+    _ensure_rate_limit(request, config.api_key)
     _ensure_model_allowed(model, config.allowed_models)
 
     # Get backend for model
@@ -129,7 +167,14 @@ async def create_transcription(
         if prompt and "prompt" in inspect.signature(backend.transcribe).parameters:
             transcribe_kwargs["prompt"] = prompt
 
-        result = backend.transcribe(tmp_path, **transcribe_kwargs)
+        executor = getattr(request.app.state, "transcribe_executor", None)
+        result = await _run_transcription(
+            backend,
+            tmp_path,
+            transcribe_kwargs,
+            config.transcribe_timeout_seconds,
+            executor,
+        )
 
         # Format response based on requested format
         if response_format == "text":
@@ -163,6 +208,7 @@ async def list_models(request: Request):
     """
     config: ServerConfig = request.app.state.config
     _ensure_authorized(request, config.api_key)
+    _ensure_rate_limit(request, config.api_key)
 
     # Combine registered patterns and loaded models
     patterns = list_registered_patterns()
