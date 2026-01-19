@@ -115,7 +115,9 @@ API key headers:
 - `X-API-Key: <token>`
 
 Use `OPEN_ASR_SERVER_ALLOWED_MODELS` to limit which model IDs can be loaded
-and prevent unbounded downloads.
+and prevent unbounded downloads. Avoid logging request bodies or filenames if
+those may contain sensitive data, and review reverse-proxy access logs for any
+retention concerns.
 
 ## Release
 
