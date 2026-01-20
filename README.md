@@ -94,6 +94,8 @@ original JFK speech is public domain.
 uv run --extra parakeet scripts/smoke_parakeet.py samples/jfk_0_5.flac
 uv run --python 3.11 --extra whisper scripts/smoke_whisper.py samples/jfk_0_5.flac
 uv run --python 3.11 --extra lightning-whisper scripts/smoke_lightning.py samples/jfk_0_5.flac
+uv run --extra whisper-cpp scripts/smoke_whisper_cpp.py samples/jfk_0_5.flac
+uv run --python 3.12 --extra kyutai-mlx scripts/smoke_kyutai_mlx.py samples/jfk_0_5.flac
 ```
 
 ## Backend options
