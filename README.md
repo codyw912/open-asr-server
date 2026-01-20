@@ -16,19 +16,30 @@ uv tool install "open-asr-server"
 Add backend extras as needed:
 
 ```bash
-uv tool install "open-asr-server[parakeet]"
-uv tool install "open-asr-server[whisper]"
-uv tool install "open-asr-server[lightning-whisper]"
+uv tool install "open-asr-server[parakeet]"         # MLX Parakeet (Apple Silicon)
+uv tool install "open-asr-server[whisper]"          # MLX Whisper
+uv tool install "open-asr-server[lightning-whisper]" # MLX Lightning Whisper
+uv tool install "open-asr-server[kyutai-mlx]"        # Kyutai STT (MLX)
+uv tool install "open-asr-server[faster-whisper]"    # CPU (CTranslate2)
+uv tool install "open-asr-server[whisper-cpp]"       # CPU (whisper.cpp)
 ```
 
-Note: the Whisper extras currently require Python 3.11 (tiktoken build constraints on 3.12+).
+Notes:
+- MLX Whisper/Lightning/Parakeet extras are currently pinned to Python 3.11.
+- Kyutai MLX is currently pinned to Python 3.12.
 
-### Whisper troubleshooting
+### MLX troubleshooting
 
-If `uv run --extra whisper` fails on Python 3.12+, use a 3.11 interpreter for now:
+If MLX extras fail on newer Python versions, use Python 3.11 for Parakeet/Whisper/Lightning:
 
 ```bash
 uv run --python 3.11 --extra whisper -- open-asr-server serve --host 127.0.0.1 --port 8000
+```
+
+For Kyutai MLX, use Python 3.12:
+
+```bash
+uv run --python 3.12 --extra kyutai-mlx -- open-asr-server serve --host 127.0.0.1 --port 8000
 ```
 
 ## Run
@@ -49,6 +60,7 @@ uv tool run open-asr-server serve --host 127.0.0.1 --port 8000
 Environment variables:
 
 - `OPEN_ASR_SERVER_DEFAULT_MODEL`: default model ID for requests
+- `OPEN_ASR_DEFAULT_BACKEND`: preferred backend when model patterns overlap
 - `OPEN_ASR_SERVER_PRELOAD`: comma-separated models to preload at startup
 - `OPEN_ASR_SERVER_API_KEY`: optional shared secret for requests
 - `OPEN_ASR_SERVER_ALLOWED_MODELS`: comma-separated allowed model IDs or patterns
@@ -86,14 +98,18 @@ uv run --python 3.11 --extra lightning-whisper scripts/smoke_lightning.py sample
 
 ## Backend options
 
-All backends are MLX-based today (Apple Silicon/macOS). Non-MLX backends are
-planned, but not yet supported.
+Backends are selected by model ID patterns. Use `backend:model` when you need
+an explicit backend.
 
-Model IDs determine which backend is used:
-
+Metal (Apple Silicon)
 - Parakeet MLX: `mlx-community/parakeet-tdt-0.6b-v3` (default) or `parakeet-*`
 - MLX Whisper: `whisper-large-v3-turbo` or `mlx-community/whisper-large-v3-turbo`
 - Lightning Whisper MLX: `lightning-whisper-distil-large-v3`
+- Kyutai STT MLX: `kyutai/stt-*-mlx`
+
+CPU
+- Faster-Whisper: `openai/whisper-*` and `distil-whisper/*`
+- whisper.cpp: `tiny*`, `base*`, `small*`, `medium*`, `large*`
 
 ## API compatibility
 
@@ -101,6 +117,7 @@ The server implements:
 
 - `POST /v1/audio/transcriptions`
 - `GET /v1/models`
+- `GET /v1/models/metadata`
 
 Example:
 
