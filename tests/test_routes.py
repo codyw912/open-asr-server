@@ -41,19 +41,33 @@ class FakeBackend:
 
 class RouteTests(unittest.TestCase):
     def setUp(self):
-        self._factories = dict(backends._backend_factories)
+        self._registered = dict(backends._registered_backends)
         self._backends = dict(backends._backends)
 
     def tearDown(self):
-        backends._backend_factories.clear()
-        backends._backend_factories.update(self._factories)
+        backends._registered_backends.clear()
+        backends._registered_backends.update(self._registered)
         backends._backends.clear()
         backends._backends.update(self._backends)
 
     def _register_backend(self, model_id: str, backend=None):
         backend = backend or FakeBackend()
-        backends._backends.pop(model_id, None)
-        backends.register_backend(model_id, lambda _: backend)
+        backend_id = f"test-{model_id}".replace("/", "-").replace(":", "-")
+        descriptor = backends.BackendDescriptor(
+            id=backend_id,
+            display_name="Test Backend",
+            model_patterns=[model_id],
+            device_types=["cpu"],
+            capabilities=backends.BackendCapabilities(
+                supports_prompt=True,
+                supports_word_timestamps=True,
+                supports_segments=True,
+            ),
+            metadata={"source": "default"},
+        )
+        backends._registered_backends.pop(backend_id, None)
+        backends._backends.pop((backend_id, model_id), None)
+        backends.register_backend(descriptor, lambda _: backend)
         return backend
 
     def _client(self, config: ServerConfig):

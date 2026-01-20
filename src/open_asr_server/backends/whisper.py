@@ -131,11 +131,24 @@ def _create_whisper_backend(model_id: str) -> WhisperBackend:
 
 
 # Register backends on module import
-from . import register_backend
+from . import BackendCapabilities, BackendDescriptor, register_backend
 
-# Short aliases
-for alias in WHISPER_MODELS:
-    register_backend(alias, _create_whisper_backend)
+WHISPER_DESCRIPTOR = BackendDescriptor(
+    id="whisper-mlx",
+    display_name="Whisper MLX",
+    model_patterns=[*WHISPER_MODELS.keys(), "mlx-community/whisper-*"],
+    device_types=["metal"],
+    optional_dependencies=["mlx-whisper"],
+    capabilities=BackendCapabilities(
+        supports_prompt=True,
+        supports_word_timestamps=True,
+        supports_segments=True,
+        supports_languages=None,
+    ),
+    metadata={
+        "family": "whisper",
+        "source": "default",
+    },
+)
 
-# Full mlx-community model paths
-register_backend("mlx-community/whisper-*", _create_whisper_backend)
+register_backend(WHISPER_DESCRIPTOR, _create_whisper_backend)

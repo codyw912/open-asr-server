@@ -34,13 +34,22 @@ Issues = "https://github.com/codyw912/open-asr-server/issues"
 
 [project.optional-dependencies]
 parakeet = [
-    "parakeet-mlx",
+    "parakeet-mlx; python_version < '3.12'",
 ]
 whisper = [
     "mlx-whisper; python_version < '3.12'",
 ]
 lightning-whisper = [
     "lightning-whisper-mlx; python_version < '3.12'",
+]
+faster-whisper = [
+    "faster-whisper",
+]
+whisper-cpp = [
+    "pywhispercpp",
+]
+kyutai-mlx = [
+    "moshi-mlx; python_version >= '3.12' and python_version < '3.13'",
 ]
 dev = [
     "pytest>=7.4",

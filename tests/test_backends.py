@@ -11,13 +11,13 @@ from open_asr_server.backends import lightning_whisper, parakeet, whisper
 
 @pytest.fixture
 def reset_backend_registry():
-    factories = dict(backends._backend_factories)
+    registered = dict(backends._registered_backends)
     instances = dict(backends._backends)
-    backends._backend_factories.clear()
+    backends._registered_backends.clear()
     backends._backends.clear()
     yield
-    backends._backend_factories.clear()
-    backends._backend_factories.update(factories)
+    backends._registered_backends.clear()
+    backends._registered_backends.update(registered)
     backends._backends.clear()
     backends._backends.update(instances)
 
@@ -34,9 +34,50 @@ def test_backend_registry_matches_patterns(reset_backend_registry):
     def factory(_: str) -> DummyBackend:
         return DummyBackend()
 
-    backends.register_backend("foo-*", factory)
+    descriptor = backends.BackendDescriptor(
+        id="test-backend",
+        display_name="Test Backend",
+        model_patterns=["foo-*"],
+        device_types=["cpu"],
+    )
+    backends.register_backend(descriptor, factory)
 
     backend = backends.get_backend("foo-bar")
+
+    assert isinstance(backend, DummyBackend)
+
+
+def test_entry_point_load_registers_backend(reset_backend_registry):
+    class DummyBackend:
+        def transcribe(self, *args, **kwargs):
+            raise NotImplementedError
+
+        @property
+        def supported_languages(self):
+            return None
+
+    def factory(_: str) -> DummyBackend:
+        return DummyBackend()
+
+    descriptor = backends.BackendDescriptor(
+        id="entry-backend",
+        display_name="Entry Backend",
+        model_patterns=["entry-*"],
+        device_types=["cpu"],
+    )
+    entry_point_value = backends.BackendEntryPoint(
+        descriptor=descriptor,
+        factory=factory,
+    )
+
+    class DummyEntryPoint:
+        name = "dummy"
+
+        def load(self):
+            return entry_point_value
+
+    backends._load_entry_point(DummyEntryPoint())  # type: ignore[arg-type]
+    backend = backends.get_backend("entry-model")
 
     assert isinstance(backend, DummyBackend)
 

@@ -199,11 +199,27 @@ def _register_lightning_whisper_backends():
         # Test import first
         import lightning_whisper_mlx  # noqa: F401
 
-        from . import register_backend
+        from . import BackendCapabilities, BackendDescriptor, register_backend
 
-        # Register all model aliases
-        for alias in LIGHTNING_WHISPER_MODELS:
-            register_backend(alias, _create_lightning_whisper_backend)
+        descriptor = BackendDescriptor(
+            id="lightning-whisper-mlx",
+            display_name="Lightning Whisper MLX",
+            model_patterns=list(LIGHTNING_WHISPER_MODELS.keys()),
+            device_types=["metal"],
+            optional_dependencies=["lightning-whisper-mlx"],
+            capabilities=BackendCapabilities(
+                supports_prompt=False,
+                supports_word_timestamps=False,
+                supports_segments=True,
+                supports_languages=None,
+            ),
+            metadata={
+                "family": "whisper",
+                "source": "default",
+            },
+        )
+
+        register_backend(descriptor, _create_lightning_whisper_backend)
 
     except ImportError:
         # lightning-whisper-mlx not installed or can't be imported
