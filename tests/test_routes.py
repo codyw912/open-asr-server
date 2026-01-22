@@ -182,3 +182,93 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         model_ids = {item["id"] for item in response.json()["data"]}
         self.assertEqual(model_ids, {"test-model"})
+
+    def test_models_metadata_includes_patterns_and_loaded_models(self):
+        descriptor = backends.BackendDescriptor(
+            id="test-meta",
+            display_name="Test Metadata",
+            model_patterns=["test-model"],
+            device_types=["cpu"],
+            capabilities=backends.BackendCapabilities(
+                supports_prompt=True,
+                supports_word_timestamps=True,
+                supports_segments=True,
+            ),
+            metadata={
+                "family": "whisper",
+                "precision": "int8",
+                "min_ram_mb": 512.0,
+                "notes": "metadata notes",
+                "source": "default",
+            },
+        )
+        backends.register_backend(descriptor, lambda _: FakeBackend())
+        backends.get_backend("test-model")
+        client = self._client(ServerConfig(preload_models=[]))
+
+        response = client.get("/v1/models/metadata")
+
+        self.assertEqual(response.status_code, 200)
+        data = {entry["id"]: entry for entry in response.json()["data"]}
+        self.assertIn("test-model", data)
+        self.assertIn("test-meta:test-model", data)
+        pattern_entry = data["test-model"]
+        loaded_entry = data["test-meta:test-model"]
+        self.assertEqual(pattern_entry["backend"], "test-meta")
+        self.assertEqual(pattern_entry["precision"], "int8")
+        self.assertEqual(pattern_entry["min_ram_mb"], 512.0)
+        self.assertEqual(pattern_entry["notes"], "metadata notes")
+        self.assertTrue(pattern_entry["capabilities"]["supports_prompt"])
+        self.assertEqual(loaded_entry["device_types"], ["cpu"])
+
+    def test_models_metadata_allowlist_accepts_prefixed_ids(self):
+        descriptor = backends.BackendDescriptor(
+            id="test-meta-allow",
+            display_name="Test Metadata Allowlist",
+            model_patterns=["allowed-model"],
+            device_types=["cpu"],
+        )
+        backends.register_backend(descriptor, lambda _: FakeBackend())
+        backends.get_backend("allowed-model")
+        client = self._client(
+            ServerConfig(preload_models=[], allowed_models=["allowed-model"])
+        )
+
+        response = client.get("/v1/models/metadata")
+
+        self.assertEqual(response.status_code, 200)
+        model_ids = {entry["id"] for entry in response.json()["data"]}
+        self.assertEqual(model_ids, {"allowed-model", "test-meta-allow:allowed-model"})
+
+    def test_transcription_conflict_returns_candidates(self):
+        backends.register_backend(
+            backends.BackendDescriptor(
+                id="conflict-a",
+                display_name="Conflict A",
+                model_patterns=["conflict-model"],
+                device_types=["cpu"],
+            ),
+            lambda _: FakeBackend(),
+        )
+        backends.register_backend(
+            backends.BackendDescriptor(
+                id="conflict-b",
+                display_name="Conflict B",
+                model_patterns=["conflict-model"],
+                device_types=["cpu"],
+            ),
+            lambda _: FakeBackend(),
+        )
+        client = self._client(
+            ServerConfig(preload_models=[], default_backend="missing")
+        )
+
+        files = {"file": ("audio.wav", b"test audio", "audio/wav")}
+        data = {"model": "conflict-model", "response_format": "json"}
+        response = client.post("/v1/audio/transcriptions", data=data, files=files)
+
+        self.assertEqual(response.status_code, 409)
+        detail = response.json()["detail"]
+        self.assertIn("conflict-a", detail)
+        self.assertIn("conflict-b", detail)
+        self.assertIn("OPEN_ASR_DEFAULT_BACKEND", detail)

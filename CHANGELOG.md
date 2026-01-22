@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- TBD.
+- Map faster-whisper model IDs for OpenAI/Distil Whisper patterns and guard batch_size support.
+- Expand backend coverage for metadata, conflicts, and backend-specific behaviors.
+- Add faster-whisper smoke test using bundled sample audio.
 
 ## 0.1.2
 

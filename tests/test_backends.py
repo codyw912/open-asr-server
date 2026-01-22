@@ -6,7 +6,14 @@ from types import SimpleNamespace
 import pytest
 
 import open_asr_server.backends as backends
-from open_asr_server.backends import lightning_whisper, parakeet, whisper
+from open_asr_server.backends import (
+    faster_whisper,
+    kyutai_mlx,
+    lightning_whisper,
+    parakeet,
+    whisper,
+    whisper_cpp,
+)
 
 
 @pytest.fixture
@@ -80,6 +87,442 @@ def test_entry_point_load_registers_backend(reset_backend_registry):
     backend = backends.get_backend("entry-model")
 
     assert isinstance(backend, DummyBackend)
+
+
+def test_backend_resolves_prefixed_model(reset_backend_registry):
+    class DummyBackend:
+        def __init__(self, backend_id: str):
+            self.backend_id = backend_id
+
+        def transcribe(self, *args, **kwargs):
+            raise NotImplementedError
+
+        @property
+        def supported_languages(self):
+            return None
+
+    calls = {}
+
+    def factory(model_id: str) -> DummyBackend:
+        calls["model_id"] = model_id
+        return DummyBackend("prefixed")
+
+    descriptor = backends.BackendDescriptor(
+        id="prefixed",
+        display_name="Prefixed Backend",
+        model_patterns=["demo-*"],
+        device_types=["cpu"],
+    )
+    backends.register_backend(descriptor, factory)
+
+    backend = backends.get_backend("prefixed:demo-model")
+
+    assert isinstance(backend, DummyBackend)
+    assert backend.backend_id == "prefixed"
+    assert calls["model_id"] == "demo-model"
+
+
+def test_backend_resolves_default_from_env(reset_backend_registry, monkeypatch):
+    class DummyBackend:
+        def __init__(self, backend_id: str):
+            self.backend_id = backend_id
+
+        def transcribe(self, *args, **kwargs):
+            raise NotImplementedError
+
+        @property
+        def supported_languages(self):
+            return None
+
+    calls = []
+
+    def factory(backend_id: str):
+        def _factory(model_id: str) -> DummyBackend:
+            calls.append((backend_id, model_id))
+            return DummyBackend(backend_id)
+
+        return _factory
+
+    backends.register_backend(
+        backends.BackendDescriptor(
+            id="alpha",
+            display_name="Alpha Backend",
+            model_patterns=["shared-*"],
+            device_types=["cpu"],
+        ),
+        factory("alpha"),
+    )
+    backends.register_backend(
+        backends.BackendDescriptor(
+            id="beta",
+            display_name="Beta Backend",
+            model_patterns=["shared-*"],
+            device_types=["cpu"],
+        ),
+        factory("beta"),
+    )
+    monkeypatch.setenv("OPEN_ASR_DEFAULT_BACKEND", "beta")
+
+    backend = backends.get_backend("shared-model")
+
+    assert isinstance(backend, DummyBackend)
+    assert backend.backend_id == "beta"
+    assert calls == [("beta", "shared-model")]
+
+
+def test_faster_whisper_transcribe_passes_parameters(monkeypatch):
+    calls = {}
+
+    class DummyWhisperModel:
+        def __init__(self, model_id, device, compute_type):
+            calls["init"] = (model_id, device, compute_type)
+
+        def transcribe(self, audio_path, **kwargs):
+            calls["audio_path"] = audio_path
+            calls["kwargs"] = kwargs
+            segment = SimpleNamespace(
+                text=" hello ",
+                start=0.0,
+                end=1.0,
+                words=[SimpleNamespace(word="hello", start=0.0, end=1.0)],
+            )
+            info = SimpleNamespace(language="en")
+            return [segment], info
+
+    module = types.ModuleType("faster_whisper")
+    setattr(module, "WhisperModel", DummyWhisperModel)
+    monkeypatch.setitem(sys.modules, "faster_whisper", module)
+
+    backend = faster_whisper.FasterWhisperBackend(
+        model_id="openai/whisper-tiny",
+        compute_type="int8",
+        device="cpu",
+        beam_size=7,
+        batch_size=2,
+    )
+    result = backend.transcribe(
+        Path("audio.wav"),
+        language="es",
+        temperature=0.4,
+        word_timestamps=True,
+        prompt="style prompt",
+    )
+
+    assert calls["init"] == ("tiny", "cpu", "int8")
+    assert calls["audio_path"] == "audio.wav"
+    assert calls["kwargs"] == {
+        "language": "es",
+        "temperature": 0.4,
+        "beam_size": 7,
+        "word_timestamps": True,
+        "initial_prompt": "style prompt",
+        "batch_size": 2,
+    }
+    assert result.text == "hello"
+    assert result.language == "en"
+    assert result.duration == 1.0
+    assert result.words is not None and result.words[0].word == "hello"
+    assert result.segments is not None and result.segments[0].text == "hello"
+
+
+def test_faster_whisper_skips_unsupported_batch_size(monkeypatch):
+    calls = {}
+
+    class DummyWhisperModel:
+        def __init__(self, model_id, device, compute_type):
+            calls["init"] = (model_id, device, compute_type)
+
+        def transcribe(
+            self,
+            audio_path,
+            *,
+            language=None,
+            temperature=0.0,
+            beam_size=5,
+            word_timestamps=False,
+            initial_prompt=None,
+        ):
+            calls["audio_path"] = audio_path
+            calls["kwargs"] = {
+                "language": language,
+                "temperature": temperature,
+                "beam_size": beam_size,
+                "word_timestamps": word_timestamps,
+                "initial_prompt": initial_prompt,
+            }
+            return [], SimpleNamespace(language=None)
+
+    module = types.ModuleType("faster_whisper")
+    setattr(module, "WhisperModel", DummyWhisperModel)
+    monkeypatch.setitem(sys.modules, "faster_whisper", module)
+
+    backend = faster_whisper.FasterWhisperBackend(
+        model_id="openai/whisper-tiny",
+        batch_size=4,
+    )
+    result = backend.transcribe(
+        Path("audio.wav"),
+        language="fr",
+        temperature=0.1,
+        word_timestamps=False,
+        prompt=None,
+    )
+
+    assert calls["init"] == ("tiny", "cpu", "int8")
+    assert calls["audio_path"] == "audio.wav"
+    assert calls["kwargs"] == {
+        "language": "fr",
+        "temperature": 0.1,
+        "beam_size": 5,
+        "word_timestamps": False,
+        "initial_prompt": None,
+    }
+    assert result.text == ""
+    assert result.duration == 0.0
+
+
+def test_faster_whisper_smoke():
+    pytest.importorskip("faster_whisper")
+    audio_path = Path(__file__).resolve().parents[1] / "samples" / "jfk_0_5.flac"
+    assert audio_path.exists()
+
+    backend = faster_whisper.FasterWhisperBackend(model_id="openai/whisper-tiny")
+    result = backend.transcribe(audio_path)
+
+    assert result.text.strip()
+    assert result.duration > 0
+
+
+def test_whisper_cpp_transcribe_scales_segments_and_params(monkeypatch):
+    calls = {}
+
+    class DummyModel:
+        def __init__(self, model_id, print_progress, print_realtime):
+            calls["init"] = (model_id, print_progress, print_realtime)
+
+        def transcribe(self, audio_path, **params):
+            calls["audio_path"] = audio_path
+            calls["params"] = params
+            return [
+                SimpleNamespace(text=" hello ", t0=0, t1=100, probability=0.9),
+                SimpleNamespace(text="world", t0=100, t1=200, probability=None),
+            ]
+
+    model_module = types.ModuleType("pywhispercpp.model")
+    setattr(model_module, "Model", DummyModel)
+    pkg = types.ModuleType("pywhispercpp")
+    monkeypatch.setitem(sys.modules, "pywhispercpp", pkg)
+    monkeypatch.setitem(sys.modules, "pywhispercpp.model", model_module)
+
+    backend = whisper_cpp.WhisperCppBackend("base.en")
+    result = backend.transcribe(
+        Path("audio.wav"),
+        language="fr",
+        temperature=0.4,
+        word_timestamps=True,
+        prompt="hint",
+    )
+
+    assert calls["init"] == ("base.en", False, False)
+    assert calls["audio_path"] == "audio.wav"
+    assert calls["params"] == {
+        "temperature": 0.4,
+        "language": "fr",
+        "initial_prompt": "hint",
+    }
+    assert result.text == "hello world"
+    assert result.language == "fr"
+    assert result.duration == 2.0
+    assert result.words is None
+    assert result.segments is not None
+    assert result.segments[0].start == 0.0
+    assert result.segments[0].end == 1.0
+    assert result.segments[0].confidence == 0.9
+    assert result.segments[1].confidence is None
+
+
+def test_kyutai_mlx_pad_audio_uses_stt_config():
+    backend = kyutai_mlx.KyutaiMlxBackend.__new__(kyutai_mlx.KyutaiMlxBackend)
+
+    class DummyNumpy:
+        def __init__(self):
+            self.called = None
+
+        def pad(self, audio, pad_width, mode):
+            self.called = (audio, pad_width, mode)
+            return "padded"
+
+    dummy_np = DummyNumpy()
+    setattr(backend, "_np", dummy_np)
+    setattr(
+        backend,
+        "_stt_config",
+        {
+            "audio_delay_seconds": 0.5,
+            "audio_silence_prefix_seconds": 0.25,
+        },
+    )
+
+    result = kyutai_mlx.KyutaiMlxBackend._pad_audio(backend, "audio")
+
+    assert result == "padded"
+    assert dummy_np.called == ("audio", [(0, 0), (6000, 36000)], "constant")
+
+
+def test_kyutai_mlx_transcribe_returns_empty_for_short_audio():
+    backend = kyutai_mlx.KyutaiMlxBackend.__new__(kyutai_mlx.KyutaiMlxBackend)
+
+    class DummyAudio:
+        def __init__(self, length):
+            self.shape = (1, length)
+
+    calls = {}
+
+    class DummySphn:
+        def read(self, path, sample_rate):
+            calls["path"] = path
+            calls["sample_rate"] = sample_rate
+            return DummyAudio(1000), None
+
+    setattr(backend, "_sphn", DummySphn())
+    setattr(backend, "_stt_config", None)
+
+    result = backend.transcribe(
+        Path("audio.wav"),
+        language="en",
+        temperature=0.8,
+        word_timestamps=True,
+        prompt="ignored",
+    )
+
+    assert calls["path"] == "audio.wav"
+    assert calls["sample_rate"] == 24000
+    assert result.text == ""
+    assert result.language == "en"
+    assert result.duration == pytest.approx(1000 / 24000.0)
+
+
+def test_kyutai_mlx_pad_audio_returns_input_without_config():
+    backend = kyutai_mlx.KyutaiMlxBackend.__new__(kyutai_mlx.KyutaiMlxBackend)
+    setattr(backend, "_stt_config", None)
+    audio = object()
+
+    result = kyutai_mlx.KyutaiMlxBackend._pad_audio(backend, audio)
+
+    assert result is audio
+
+
+def test_kyutai_mlx_transcribe_decodes_tokens():
+    backend = kyutai_mlx.KyutaiMlxBackend.__new__(kyutai_mlx.KyutaiMlxBackend)
+    encode_calls = []
+    sampler_calls = []
+    step_inputs = []
+    gen_calls = {}
+    read_calls = {}
+    pad_calls = {}
+
+    class DummyAudio:
+        def __init__(self, length):
+            self.shape = (1, length)
+
+        def __getitem__(self, _item):
+            return DummyPcm()
+
+    class DummyPcm:
+        def __getitem__(self, _item):
+            return "pcm"
+
+    class DummySphn:
+        def read(self, path, sample_rate):
+            read_calls["path"] = path
+            read_calls["sample_rate"] = sample_rate
+            return DummyAudio(7680), None
+
+    def pad_audio(audio):
+        pad_calls["audio"] = audio
+        return audio
+
+    class DummySampler:
+        def __init__(self, top_k, temp):
+            sampler_calls.append((top_k, temp))
+
+    token_values = iter([4, 0, 3, 6])
+
+    class DummyLmGen:
+        def __init__(
+            self, model, max_steps, text_sampler, audio_sampler, cfg_coef, check
+        ):
+            gen_calls["model"] = model
+            gen_calls["max_steps"] = max_steps
+            gen_calls["cfg_coef"] = cfg_coef
+            gen_calls["check"] = check
+
+        def step(self, other_audio_tokens, condition_tensor):
+            step_inputs.append((other_audio_tokens, condition_tensor))
+            value = next(token_values)
+            return [SimpleNamespace(item=lambda: value)]
+
+    class DummyAudioTokenizer:
+        def encode_step(self, data):
+            encode_calls.append(data)
+            return "encoded"
+
+    class DummyTextTokenizer:
+        def id_to_piece(self, token):
+            mapping = {4: "\u2581hello", 6: "\u2581there"}
+            return mapping[token]
+
+    class DummyMxArray:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def transpose(self, *_args):
+            return self
+
+        def __getitem__(self, item):
+            if isinstance(item, tuple):
+                return self
+            if item == 0:
+                return self.payload
+            return self
+
+    class DummyMx:
+        def array(self, payload):
+            return DummyMxArray(payload)
+
+    setattr(backend, "_sphn", DummySphn())
+    setattr(backend, "_pad_audio", pad_audio)
+    setattr(backend, "_utils", SimpleNamespace(Sampler=DummySampler))
+    setattr(backend, "_models", SimpleNamespace(LmGen=DummyLmGen))
+    setattr(backend, "_audio_tokenizer", DummyAudioTokenizer())
+    setattr(backend, "_mx", DummyMx())
+    setattr(backend, "_text_tokenizer", DummyTextTokenizer())
+    setattr(backend, "_other_codebooks", 1)
+    setattr(backend, "_condition_tensor", "cond")
+    setattr(backend, "_model", "model")
+
+    result = backend.transcribe(
+        Path("audio.wav"),
+        language="en",
+        temperature=0.2,
+        word_timestamps=True,
+        prompt="ignored",
+    )
+
+    assert read_calls["path"] == "audio.wav"
+    assert read_calls["sample_rate"] == 24000
+    assert pad_calls["audio"].shape == (1, 7680)
+    assert sampler_calls == [(25, 0.2), (250, 0.2)]
+    assert gen_calls["max_steps"] == 4
+    assert gen_calls["cfg_coef"] == 1.0
+    assert gen_calls["check"] is False
+    assert step_inputs[0] == ("encoded", "cond")
+    assert encode_calls == ["pcm", "pcm", "pcm", "pcm"]
+    assert result.text == "hello there"
+    assert result.language == "en"
+    assert result.duration == pytest.approx(7680 / 24000.0)
+    assert result.words is None
+    assert result.segments is None
 
 
 def test_parakeet_backend_uses_cache_dir(monkeypatch, tmp_path):
