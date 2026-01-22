@@ -5,6 +5,8 @@ from typing import Literal
 from pydantic import BaseModel
 
 ResponseFormat = Literal["json", "text", "srt", "verbose_json", "vtt"]
+DeviceType = Literal["cpu", "metal", "cuda", "remote"]
+PrecisionType = Literal["fp32", "fp16", "bf16", "int8", "int4"]
 
 
 class TranscriptionResponse(BaseModel):
@@ -64,3 +66,38 @@ class ModelListResponse(BaseModel):
 
     object: str = "list"
     data: list[ModelInfo]
+
+
+class ModelCapabilitiesResponse(BaseModel):
+    """Capability flags for a model backend."""
+
+    supports_prompt: bool | None = None
+    supports_word_timestamps: bool | None = None
+    supports_segments: bool | None = None
+    supports_languages: list[str] | None = None
+    supports_streaming: bool | None = None
+
+
+class ModelMetadataEntry(BaseModel):
+    """Metadata for /v1/models/metadata endpoint."""
+
+    id: str
+    backend: str
+    family: str | None = None
+    parameters: int | None = None
+    size_on_disk_mb: float | None = None
+    weights_mb: float | None = None
+    precision: PrecisionType | None = None
+    device_types: list[DeviceType] | None = None
+    min_ram_mb: float | None = None
+    min_vram_mb: float | None = None
+    capabilities: ModelCapabilitiesResponse | None = None
+    notes: str | None = None
+    source: Literal["model-card", "heuristic", "default", "unknown"] | None = None
+
+
+class ModelMetadataListResponse(BaseModel):
+    """Response for /v1/models/metadata endpoint."""
+
+    object: str = "list"
+    data: list[ModelMetadataEntry]

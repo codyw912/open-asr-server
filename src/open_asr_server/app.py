@@ -32,7 +32,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         # Startup: preload models if configured
         for model in config.preload_models:
-            preload_backend(model)
+            preload_backend(model, default_backend=config.default_backend)
         yield
         # Shutdown: close executor if created
         if transcribe_executor:

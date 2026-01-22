@@ -12,10 +12,25 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
-from .backends import get_backend, list_loaded_models, list_registered_patterns
+from .backends import (
+    BackendConflictError,
+    BackendNotFoundError,
+    get_backend,
+    list_backend_descriptors,
+    list_loaded_models,
+    list_loaded_model_specs,
+    list_registered_patterns,
+)
 from .config import ServerConfig
 from .formatters import to_json, to_srt, to_text, to_verbose_json, to_vtt
-from .models import ModelInfo, ModelListResponse, ResponseFormat
+from .models import (
+    ModelCapabilitiesResponse,
+    ModelInfo,
+    ModelListResponse,
+    ModelMetadataEntry,
+    ModelMetadataListResponse,
+    ResponseFormat,
+)
 
 router = APIRouter()
 
@@ -24,6 +39,15 @@ _CHUNK_SIZE = 1024 * 1024
 
 def _matches_any(model: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(model, pattern) for pattern in patterns)
+
+
+def _matches_allowed(model: str, patterns: list[str]) -> bool:
+    if _matches_any(model, patterns):
+        return True
+    prefix, sep, remainder = model.partition(":")
+    if sep and _matches_any(remainder, patterns):
+        return True
+    return False
 
 
 def _extract_api_key(request: Request) -> str | None:
@@ -44,7 +68,7 @@ def _ensure_authorized(request: Request, api_key: str | None) -> None:
 
 
 def _ensure_model_allowed(model: str, allowed: list[str]) -> None:
-    if allowed and not _matches_any(model, allowed):
+    if allowed and not _matches_allowed(model, allowed):
         raise HTTPException(status_code=403, detail="Model not allowed")
 
 
@@ -63,6 +87,35 @@ def _ensure_rate_limit(request: Request, api_key: str | None) -> None:
     key = _rate_limit_key(request, api_key)
     if not limiter.allow(key):
         raise HTTPException(status_code=429, detail="Too many requests")
+
+
+def _descriptor_to_metadata(descriptor, model_id: str) -> ModelMetadataEntry:
+    metadata = descriptor.metadata or {}
+    entry = {
+        "id": model_id,
+        "backend": descriptor.id,
+        "device_types": descriptor.device_types,
+    }
+    if descriptor.capabilities:
+        entry["capabilities"] = ModelCapabilitiesResponse(
+            **descriptor.capabilities.model_dump(exclude_none=True)
+        )
+
+    for key in (
+        "family",
+        "parameters",
+        "size_on_disk_mb",
+        "weights_mb",
+        "precision",
+        "min_ram_mb",
+        "min_vram_mb",
+        "notes",
+        "source",
+    ):
+        if key in metadata:
+            entry[key] = metadata[key]
+
+    return ModelMetadataEntry(**entry)
 
 
 async def _run_transcription(
@@ -144,11 +197,25 @@ async def create_transcription(
     _ensure_model_allowed(model, config.allowed_models)
 
     # Get backend for model
-    backend = get_backend(model)
-    if not backend:
+    try:
+        backend = get_backend(model, default_backend=config.default_backend)
+    except BackendNotFoundError as exc:
         raise HTTPException(
             status_code=404,
-            detail=f"Model '{model}' not found. Available patterns: {list_registered_patterns()}",
+            detail=(
+                f"Model '{exc.model}' not found. Available patterns: {exc.patterns}"
+            ),
+        )
+    except BackendConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Model '"
+                + exc.model
+                + "' matches multiple backends: "
+                + ", ".join(sorted(exc.candidates))
+                + ". Use backend:model or set OPEN_ASR_DEFAULT_BACKEND."
+            ),
         )
 
     # Save upload to temp file
@@ -218,10 +285,10 @@ async def list_models(request: Request):
         patterns = [
             pattern
             for pattern in patterns
-            if _matches_any(pattern, config.allowed_models)
+            if _matches_allowed(pattern, config.allowed_models)
         ]
         loaded = [
-            model for model in loaded if _matches_any(model, config.allowed_models)
+            model for model in loaded if _matches_allowed(model, config.allowed_models)
         ]
 
     # Create model info for each unique entry
@@ -229,3 +296,45 @@ async def list_models(request: Request):
     data = [ModelInfo(id=m) for m in sorted(all_models)]
 
     return ModelListResponse(data=data)
+
+
+@router.get(
+    "/v1/models/metadata",
+    response_model=ModelMetadataListResponse,
+    response_model_exclude_none=True,
+)
+async def list_models_metadata(request: Request):
+    """List model metadata entries."""
+    config: ServerConfig = request.app.state.config
+    _ensure_authorized(request, config.api_key)
+    _ensure_rate_limit(request, config.api_key)
+
+    descriptors = {
+        descriptor.id: descriptor for descriptor in list_backend_descriptors()
+    }
+    entries: dict[tuple[str, str], ModelMetadataEntry] = {}
+
+    for descriptor in descriptors.values():
+        for pattern in descriptor.model_patterns:
+            entry_id = pattern
+            if config.allowed_models and not _matches_allowed(
+                entry_id, config.allowed_models
+            ):
+                continue
+            entries[(descriptor.id, entry_id)] = _descriptor_to_metadata(
+                descriptor, entry_id
+            )
+
+    for backend_id, model_id in list_loaded_model_specs():
+        descriptor = descriptors.get(backend_id)
+        if not descriptor:
+            continue
+        entry_id = f"{backend_id}:{model_id}"
+        if config.allowed_models and not _matches_allowed(
+            entry_id, config.allowed_models
+        ):
+            continue
+        entries[(backend_id, entry_id)] = _descriptor_to_metadata(descriptor, entry_id)
+
+    data = [entries[key] for key in sorted(entries.keys())]
+    return ModelMetadataListResponse(data=data)

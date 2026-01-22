@@ -36,6 +36,7 @@ class ServerConfig:
     port: int = 8000
     preload_models: list[str] = field(default_factory=list)
     default_model: str = "mlx-community/parakeet-tdt-0.6b-v3"
+    default_backend: str | None = None
     max_upload_bytes: int | None = 25 * 1024 * 1024
     allowed_models: list[str] = field(default_factory=list)
     api_key: str | None = None
@@ -52,6 +53,9 @@ class ServerConfig:
         )
         preload_models = _parse_env_list(os.getenv("OPEN_ASR_SERVER_PRELOAD"))
         allowed_models = _parse_env_list(os.getenv("OPEN_ASR_SERVER_ALLOWED_MODELS"))
+        default_backend = os.getenv("OPEN_ASR_DEFAULT_BACKEND")
+        if default_backend:
+            default_backend = default_backend.strip()
         max_upload_bytes = _parse_env_int(
             os.getenv("OPEN_ASR_SERVER_MAX_UPLOAD_BYTES"),
             cls().max_upload_bytes,
@@ -72,6 +76,7 @@ class ServerConfig:
         return cls(
             preload_models=preload_models,
             default_model=default_model,
+            default_backend=default_backend,
             max_upload_bytes=max_upload_bytes,
             allowed_models=allowed_models,
             api_key=api_key,

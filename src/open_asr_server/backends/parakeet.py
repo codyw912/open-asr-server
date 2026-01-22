@@ -129,7 +129,24 @@ def _create_parakeet_backend(model_id: str) -> ParakeetBackend:
 
 
 # Register backends on module import
-from . import register_backend
+from . import BackendCapabilities, BackendDescriptor, register_backend
 
-register_backend("parakeet-*", _create_parakeet_backend)
-register_backend("mlx-community/parakeet-*", _create_parakeet_backend)
+PARAKEET_DESCRIPTOR = BackendDescriptor(
+    id="parakeet-mlx",
+    display_name="Parakeet MLX",
+    model_patterns=["parakeet-*", "mlx-community/parakeet-*"],
+    device_types=["metal"],
+    optional_dependencies=["parakeet-mlx"],
+    capabilities=BackendCapabilities(
+        supports_word_timestamps=True,
+        supports_segments=True,
+        supports_languages=["en"],
+    ),
+    metadata={
+        "family": "parakeet",
+        "precision": "bf16",
+        "source": "default",
+    },
+)
+
+register_backend(PARAKEET_DESCRIPTOR, _create_parakeet_backend)
