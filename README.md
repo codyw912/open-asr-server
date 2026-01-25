@@ -142,6 +142,9 @@ Environment variables:
 - `OPEN_ASR_SERVER_RATE_LIMIT_PER_MINUTE`: optional per-client request limit (off by default)
 - `OPEN_ASR_SERVER_TRANSCRIBE_TIMEOUT_SECONDS`: optional transcription timeout (off by default)
 - `OPEN_ASR_SERVER_TRANSCRIBE_WORKERS`: optional thread pool size for transcriptions
+- `OPEN_ASR_SERVER_MODEL_IDLE_SECONDS`: unload models after idle timeout (off by default)
+- `OPEN_ASR_SERVER_MODEL_EVICT_INTERVAL_SECONDS`: idle eviction sweep interval (default: 60)
+- `OPEN_ASR_SERVER_EVICT_PRELOADED_MODELS`: allow preloaded models to be evicted (default: false)
 - `OPEN_ASR_SERVER_MODEL_DIR`: override the Hugging Face cache location for this server
 - `OPEN_ASR_SERVER_HF_TOKEN`: optional Hugging Face token for gated/private models
 
@@ -153,6 +156,18 @@ without setting global HF environment variables.
 Use `OPEN_ASR_SERVER_TRANSCRIBE_TIMEOUT_SECONDS` to bound long transcriptions.
 If you set `OPEN_ASR_SERVER_TRANSCRIBE_WORKERS`, transcriptions run in a
 background thread pool instead of the event loop.
+
+Admin model management (requires API key if configured):
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/admin/models/unload \
+  -H "Content-Type: application/json" \
+  -d '{"model":"nvidia/parakeet-tdt-0.6b-v3"}'
+
+curl -X POST http://127.0.0.1:8000/v1/admin/models/unload-all \
+  -H "Content-Type: application/json" \
+  -d '{"include_pinned":true}'
+```
 
 ## Sample audio
 
