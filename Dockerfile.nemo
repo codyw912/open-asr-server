@@ -2,7 +2,7 @@ FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121
+ARG TORCH_BACKEND=cu121
 
 ENV PATH="/root/.local/bin:${PATH}"
 ENV UV_PYTHON=3.11
@@ -18,8 +18,12 @@ RUN uv python install 3.11
 
 COPY . /workspace
 
-RUN uv pip install ".[nemo]" \
-    --index-url ${TORCH_INDEX_URL} \
-    --extra-index-url https://pypi.org/simple
+ENV VIRTUAL_ENV=/workspace/.venv
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+
+RUN uv venv --python 3.11 ${VIRTUAL_ENV}
+
+RUN uv pip install --python ${VIRTUAL_ENV}/bin/python ".[nemo]" \
+    --torch-backend ${TORCH_BACKEND}
 
 CMD ["uv", "run", "--extra", "nemo", "scripts/smoke_nemo_parakeet.py", "samples/jfk_0_5.flac"]
