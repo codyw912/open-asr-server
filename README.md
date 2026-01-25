@@ -22,6 +22,7 @@ uv tool install "open-asr-server[lightning-whisper]" # MLX Lightning Whisper
 uv tool install "open-asr-server[kyutai-mlx]"        # Kyutai STT (MLX)
 uv tool install "open-asr-server[faster-whisper]"    # CPU (CTranslate2)
 uv tool install "open-asr-server[whisper-cpp]"       # CPU (whisper.cpp)
+uv tool install "open-asr-server[nemo]"              # NVIDIA NeMo (CUDA)
 ```
 
 Notes:
@@ -40,6 +41,79 @@ For Kyutai MLX, use Python 3.12:
 
 ```bash
 uv run --python 3.12 --extra kyutai-mlx -- open-asr-server serve --host 127.0.0.1 --port 8000
+```
+
+### CUDA setup (NeMo)
+
+NeMo requires a CUDA-enabled PyTorch build. Use the PyTorch install selector to
+find the right index URL for your CUDA version:
+
+https://pytorch.org/get-started/locally/
+
+Example (CUDA 12.1):
+
+```bash
+uv pip install torch --index-url https://download.pytorch.org/whl/cu121
+uv pip install "open-asr-server[nemo]"
+```
+
+Alternative (auto-detect CUDA with uv):
+
+```bash
+uv pip install torch --torch-backend=auto
+uv pip install "open-asr-server[nemo]"
+```
+
+Repo-based installs can optionally use `tool.uv.sources` to route torch downloads
+to a CUDA index automatically when the `nemo` extra is enabled (see
+`pyproject.toml`). This only applies when working from the repo (not a PyPI
+install).
+
+Install the CUDA-enabled torch build before the `nemo` extra to avoid pulling in
+a CPU-only torch dependency.
+
+Tip: CUDA backends are often easiest to run in Docker with the NVIDIA Container
+Toolkit; we do not ship a container image yet, but this keeps CUDA deps isolated.
+
+Example Docker workflow (Linux):
+
+```bash
+docker run --rm -it --gpus all \
+  -v "$(pwd)":/workspace -w /workspace \
+  nvidia/cuda:12.1.0-runtime-ubuntu22.04 \
+  bash -lc "\
+    apt-get update && apt-get install -y curl python3 python3-venv && \
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    export PATH=\"$HOME/.local/bin:$PATH\" && \
+    uv pip install torch --index-url https://download.pytorch.org/whl/cu121 && \
+    uv pip install '.[nemo]' && \
+    python scripts/smoke_nemo_parakeet.py samples/jfk_0_5.flac\
+  "
+```
+
+Dockerfile alternative:
+
+```bash
+docker build -f Dockerfile.nemo --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu118 -t open-asr-nemo:cu118 .
+docker run --rm -it --gpus all open-asr-nemo:cu118
+
+docker build -f Dockerfile.nemo -t open-asr-nemo .
+docker run --rm -it --gpus all open-asr-nemo
+```
+
+Makefile helpers:
+
+```bash
+make nemo-image
+make nemo-run
+make nemo-image TAG=cu118 TORCH_INDEX_URL=https://download.pytorch.org/whl/cu118
+```
+
+Docker smoke script:
+
+```bash
+scripts/smoke_nemo_parakeet_docker.sh
+INFO=1 scripts/smoke_nemo_parakeet_docker.sh
 ```
 
 ## Run
@@ -96,6 +170,7 @@ uv run --python 3.11 --extra whisper scripts/smoke_whisper.py samples/jfk_0_5.fl
 uv run --python 3.11 --extra lightning-whisper scripts/smoke_lightning.py samples/jfk_0_5.flac
 uv run --extra whisper-cpp scripts/smoke_whisper_cpp.py samples/jfk_0_5.flac
 uv run --python 3.12 --extra kyutai-mlx scripts/smoke_kyutai_mlx.py samples/jfk_0_5.flac
+uv run --extra nemo scripts/smoke_nemo_parakeet.py samples/jfk_0_5.flac
 ```
 
 ## Backend options
@@ -112,6 +187,9 @@ Metal (Apple Silicon)
 CPU
 - Faster-Whisper: `openai/whisper-*` and `distil-whisper/*`
 - whisper.cpp: `tiny*`, `base*`, `small*`, `medium*`, `large*`
+
+CUDA
+- NeMo Parakeet: `nvidia/parakeet*`
 
 ## API compatibility
 

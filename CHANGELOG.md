@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- TBD.
+- Add NVIDIA NeMo backend scaffold, smoke script, and docs for CUDA setup.
 
 ## 0.1.3
 

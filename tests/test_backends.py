@@ -10,6 +10,7 @@ from open_asr_server.backends import (
     faster_whisper,
     kyutai_mlx,
     lightning_whisper,
+    nemo_asr,
     parakeet,
     whisper,
     whisper_cpp,
@@ -291,6 +292,87 @@ def test_faster_whisper_smoke():
 
     assert result.text.strip()
     assert result.duration > 0
+
+
+def test_nemo_backend_uses_from_pretrained(monkeypatch):
+    calls = {}
+
+    class DummyModel:
+        def transcribe(self, audio_paths):
+            calls["audio_paths"] = audio_paths
+            return ["hello"]
+
+    class DummyASRModel:
+        @staticmethod
+        def from_pretrained(model_name):
+            calls["model_name"] = model_name
+            return DummyModel()
+
+        @staticmethod
+        def restore_from(path):
+            calls["restore_from"] = path
+            return DummyModel()
+
+    module = types.ModuleType("nemo.collections.asr.models")
+    setattr(module, "ASRModel", DummyASRModel)
+    monkeypatch.setitem(sys.modules, "nemo", types.ModuleType("nemo"))
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections", types.ModuleType("nemo.collections")
+    )
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections.asr", types.ModuleType("nemo.collections.asr")
+    )
+    monkeypatch.setitem(sys.modules, "nemo.collections.asr.models", module)
+    monkeypatch.setattr(nemo_asr, "_audio_duration_seconds", lambda _path: 1.5)
+
+    backend = nemo_asr.NemoASRBackend("nvidia/parakeet-test")
+    result = backend.transcribe(Path("audio.wav"), language="en")
+
+    assert calls["model_name"] == "nvidia/parakeet-test"
+    assert calls["audio_paths"] == ["audio.wav"]
+    assert result.text == "hello"
+    assert result.language == "en"
+    assert result.duration == 1.5
+
+
+def test_nemo_backend_restores_nemo_file(monkeypatch):
+    calls = {}
+
+    class DummyModel:
+        def transcribe(self, audio_paths):
+            calls["audio_paths"] = audio_paths
+            return ["ok"]
+
+    class DummyASRModel:
+        @staticmethod
+        def from_pretrained(model_name):
+            calls["model_name"] = model_name
+            return DummyModel()
+
+        @staticmethod
+        def restore_from(path):
+            calls["restore_from"] = path
+            return DummyModel()
+
+    module = types.ModuleType("nemo.collections.asr.models")
+    setattr(module, "ASRModel", DummyASRModel)
+    monkeypatch.setitem(sys.modules, "nemo", types.ModuleType("nemo"))
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections", types.ModuleType("nemo.collections")
+    )
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections.asr", types.ModuleType("nemo.collections.asr")
+    )
+    monkeypatch.setitem(sys.modules, "nemo.collections.asr.models", module)
+    monkeypatch.setattr(nemo_asr, "_audio_duration_seconds", lambda _path: 0.5)
+
+    backend = nemo_asr.NemoASRBackend("local_model.nemo")
+    result = backend.transcribe(Path("audio.wav"))
+
+    assert calls["restore_from"] == "local_model.nemo"
+    assert calls["audio_paths"] == ["audio.wav"]
+    assert result.text == "ok"
+    assert result.duration == 0.5
 
 
 def test_whisper_cpp_transcribe_scales_segments_and_params(monkeypatch):
