@@ -1,29 +1,17 @@
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+# syntax=docker/dockerfile:1.6
+ARG BASE_IMAGE=open-asr-nemo-base:torch2.5.1-cu121
+FROM ${BASE_IMAGE}
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+ARG UV_HTTP_TIMEOUT=300
+ARG UV_HTTP_RETRIES=5
 
-ARG TORCH_BACKEND=cu121
-
-ENV PATH="/root/.local/bin:${PATH}"
-ENV UV_PYTHON=3.11
+ENV UV_HTTP_TIMEOUT=${UV_HTTP_TIMEOUT}
+ENV UV_HTTP_RETRIES=${UV_HTTP_RETRIES}
+ENV INFO=1
 
 WORKDIR /workspace
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN uv python install 3.11
-
-COPY . /workspace
-
-ENV VIRTUAL_ENV=/workspace/.venv
-ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
-
-RUN uv venv --python 3.11 ${VIRTUAL_ENV}
-
-RUN uv pip install --python ${VIRTUAL_ENV}/bin/python ".[nemo]" \
-    --torch-backend ${TORCH_BACKEND}
-
-CMD ["uv", "run", "--extra", "nemo", "scripts/smoke_nemo_parakeet.py", "samples/jfk_0_5.flac"]
+CMD ["bash", "-lc", "nvidia-smi || true; \
+  python3 -c \"import torch; print('cuda_available', torch.cuda.is_available()); print('torch_cuda', torch.version.cuda)\"; \
+  python3 -c \"import open_asr_server\" 2>/dev/null || uv pip install -e .[nemo]; \
+  uv run --active --no-sync scripts/smoke_nemo_parakeet.py samples/jfk_0_5.flac"]

@@ -91,22 +91,30 @@ docker run --rm -it --gpus all \
   "
 ```
 
-Dockerfile alternative:
+Dockerfile alternative (dev-first split):
 
 ```bash
-docker build -f Dockerfile.nemo --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu118 -t open-asr-nemo:cu118 .
-docker run --rm -it --gpus all open-asr-nemo:cu118
+docker build -f Dockerfile.nemo.base -t open-asr-nemo-base:torch2.5.1-cu121 .
+docker build -f Dockerfile.nemo --build-arg BASE_IMAGE=open-asr-nemo-base:torch2.5.1-cu121 -t open-asr-nemo-dev:torch2.5.1-cu121 .
+docker run --rm -it --gpus all -v "$(pwd)":/workspace -w /workspace open-asr-nemo-dev:torch2.5.1-cu121
 
-docker build -f Dockerfile.nemo -t open-asr-nemo .
-docker run --rm -it --gpus all open-asr-nemo
+docker build -f Dockerfile.nemo.base \
+  --build-arg CUDA_BASE_IMAGE=pytorch/pytorch:2.5.1-cuda11.8-cudnn8-runtime \
+  -t open-asr-nemo-base:torch2.5.1-cu118 .
+docker build -f Dockerfile.nemo \
+  --build-arg BASE_IMAGE=open-asr-nemo-base:torch2.5.1-cu118 \
+  -t open-asr-nemo-dev:torch2.5.1-cu118 .
+docker run --rm -it --gpus all -v "$(pwd)":/workspace -w /workspace open-asr-nemo-dev:torch2.5.1-cu118
 ```
 
 Makefile helpers:
 
 ```bash
-make nemo-image
+make nemo-base
+make nemo-dev
 make nemo-run
-make nemo-image TAG=cu118 TORCH_INDEX_URL=https://download.pytorch.org/whl/cu118
+make nemo-base CUDA_BASE_IMAGE=pytorch/pytorch:2.5.1-cuda11.8-cudnn8-runtime BASE_TAG=torch2.5.1-cu118
+make nemo-dev BASE_TAG=torch2.5.1-cu118 DEV_TAG=torch2.5.1-cu118
 ```
 
 Docker smoke script:
@@ -114,6 +122,7 @@ Docker smoke script:
 ```bash
 scripts/smoke_nemo_parakeet_docker.sh
 INFO=1 scripts/smoke_nemo_parakeet_docker.sh
+HF_CACHE_DIR=/path/to/hf-cache scripts/smoke_nemo_parakeet_docker.sh
 ```
 
 ## Run
