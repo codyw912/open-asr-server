@@ -3,7 +3,7 @@ BASE_TAG ?= torch2.5.1-cu121
 DEV_IMAGE ?= open-asr-nemo-dev
 DEV_TAG ?= torch2.5.1-cu121
 CUDA_BASE_IMAGE ?= pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
-TORCH_INDEX_URL ?=
+TORCH_INDEX_URL ?= https://download.pytorch.org/whl/cu121
 
 .PHONY: nemo-base nemo-dev nemo-run nemo-shell
 

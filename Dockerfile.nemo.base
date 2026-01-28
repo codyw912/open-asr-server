@@ -6,7 +6,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ARG UV_HTTP_TIMEOUT=300
 ARG UV_HTTP_RETRIES=5
-ARG TORCH_INDEX_URL=
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121
 
 ENV PATH="/root/.local/bin:${PATH}"
 ENV UV_HTTP_TIMEOUT=${UV_HTTP_TIMEOUT}
@@ -18,6 +18,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        ffmpeg \
+        libsndfile1 \
+        libsox-fmt-all \
     && rm -rf /var/lib/apt/lists/*
 
 ENV VIRTUAL_ENV=/opt/venv
@@ -27,10 +30,8 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 RUN uv venv --system-site-packages --python "$(command -v python)" ${VIRTUAL_ENV}
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -n "${TORCH_INDEX_URL}" ]; then \
-        uv pip install --python ${VIRTUAL_ENV}/bin/python --upgrade \
-            torch torchaudio torchvision --index-url ${TORCH_INDEX_URL}; \
-    fi
+    uv pip install --python ${VIRTUAL_ENV}/bin/python --upgrade \
+        torch torchaudio torchvision --index-url ${TORCH_INDEX_URL}
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python ${VIRTUAL_ENV}/bin/python "nemo_toolkit[asr]"
