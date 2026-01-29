@@ -23,7 +23,7 @@ DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-1} docker build -f Dockerfile.nemo \
 	--build-arg BASE_IMAGE="${BASE_IMAGE}:${BASE_TAG}" \
 	-t "${IMAGE}:${TAG}" .
 
-DOCKER_RUN_ARGS=(--rm -it --gpus all -v "$(pwd)":/workspace -w /workspace)
+DOCKER_RUN_ARGS=(--rm -it --device nvidia.com/gpu=all -v "$(pwd)":/workspace -w /workspace)
 if [ -n "${HF_CACHE_DIR}" ]; then
 	DOCKER_RUN_ARGS+=("-v" "${HF_CACHE_DIR}:/root/.cache/huggingface")
 fi
