@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- TBD.
+
+## 0.2.0
+
 - Add NVIDIA NeMo backend scaffold, smoke script, and docs for CUDA setup.
+- Add model eviction controls, admin unload/status endpoints, and CUDA graph disable toggle.
 - Add model eviction controls, admin unload endpoints, and status introspection.
 
 ## 0.1.3
