@@ -51,13 +51,12 @@ def _prepare_audio_path(
 ) -> tuple[Path, Path | None]:
     channel_count = _audio_channel_count(audio_path)
     if not force:
-        if audio_path.suffix.lower() == ".wav" and channel_count in (None, 1):
+        if channel_count and channel_count > 1:
+            logger.info("NeMo preflight: downmixing %s to mono WAV", audio_path)
+        elif audio_path.suffix.lower() != ".wav":
             return audio_path, None
-        if audio_path.suffix.lower() != ".wav":
+        elif channel_count in (None, 1):
             return audio_path, None
-
-    if channel_count and channel_count > 1 and not force:
-        logger.info("NeMo preflight: downmixing %s to mono WAV", audio_path)
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
         temp_path = Path(handle.name)
@@ -130,13 +129,12 @@ class NemoASRBackend:
         results = []
         duration = 0.0
         try:
-            if audio_path.suffix.lower() == ".wav":
-                audio_path, converted_path = _prepare_audio_path(audio_path)
+            audio_path, converted_path = _prepare_audio_path(audio_path)
             try:
                 results = self._model.transcribe([str(audio_path)])
                 duration = _audio_duration_seconds(audio_path)
             except Exception as exc:
-                if audio_path.suffix.lower() == ".wav":
+                if converted_path is not None or audio_path.suffix.lower() == ".wav":
                     raise
                 logger.warning(
                     "NeMo fallback: converting %s to WAV (%s)", audio_path, exc

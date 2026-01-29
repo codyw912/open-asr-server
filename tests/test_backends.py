@@ -399,6 +399,7 @@ def test_nemo_prepare_audio_converts_non_wav(tmp_path, monkeypatch):
         calls["cmd"] = cmd
         return None
 
+    monkeypatch.setattr(nemo_asr, "_audio_channel_count", lambda _path: None)
     monkeypatch.setattr(nemo_asr.subprocess, "run", fake_run)
 
     prepared, temp_path = nemo_asr._prepare_audio_path(audio_path)
@@ -407,6 +408,27 @@ def test_nemo_prepare_audio_converts_non_wav(tmp_path, monkeypatch):
     assert temp_path is None
 
     prepared, temp_path = nemo_asr._prepare_audio_path(audio_path, force=True)
+
+    assert prepared.suffix == ".wav"
+    assert temp_path == prepared
+    assert calls["cmd"][0] == "ffmpeg"
+    if temp_path is not None:
+        temp_path.unlink(missing_ok=True)
+
+
+def test_nemo_prepare_audio_converts_stereo_flac(tmp_path, monkeypatch):
+    audio_path = tmp_path / "audio.flac"
+    audio_path.write_bytes(b"data")
+    calls = {}
+
+    def fake_run(cmd, check, stdout, stderr):
+        calls["cmd"] = cmd
+        return None
+
+    monkeypatch.setattr(nemo_asr, "_audio_channel_count", lambda _path: 2)
+    monkeypatch.setattr(nemo_asr.subprocess, "run", fake_run)
+
+    prepared, temp_path = nemo_asr._prepare_audio_path(audio_path)
 
     assert prepared.suffix == ".wav"
     assert temp_path == prepared
