@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import tempfile
 from pathlib import Path
 
 from .base import TranscriptionResult
+
+logger = logging.getLogger(__name__)
 
 
 def _load_nemo_model(model_id: str):
@@ -112,6 +115,7 @@ class NemoASRBackend:
                 raise
             converted_path = None
             try:
+                logger.info("NeMo fallback: converting %s to WAV", audio_path)
                 audio_path, converted_path = _prepare_audio_path(audio_path)
                 results = self._model.transcribe([str(audio_path)])
                 duration = _audio_duration_seconds(audio_path)
