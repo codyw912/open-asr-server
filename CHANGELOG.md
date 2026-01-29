@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Add NVIDIA NeMo backend scaffold, smoke script, and docs for CUDA setup.
+- Add model eviction controls and admin endpoints for unloading cached backends.
 
 ## 0.1.3
 

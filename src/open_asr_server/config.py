@@ -28,6 +28,17 @@ def _parse_env_float(value: str | None, default: float | None) -> float | None:
         return default
 
 
+def _parse_env_bool(value: str | None, default: bool | None) -> bool | None:
+    if value is None:
+        return default
+    value = value.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 @dataclass
 class ServerConfig:
     """Configuration for the ASR server."""
@@ -43,6 +54,9 @@ class ServerConfig:
     rate_limit_per_minute: int | None = None
     transcribe_timeout_seconds: float | None = None
     transcribe_workers: int | None = None
+    model_idle_seconds: float | None = None
+    model_evict_interval_seconds: float | None = 60.0
+    evict_preloaded_models: bool = False
 
     @classmethod
     def from_env(cls) -> "ServerConfig":
@@ -73,6 +87,18 @@ class ServerConfig:
             os.getenv("OPEN_ASR_SERVER_TRANSCRIBE_WORKERS"),
             cls().transcribe_workers,
         )
+        model_idle_seconds = _parse_env_float(
+            os.getenv("OPEN_ASR_SERVER_MODEL_IDLE_SECONDS"),
+            cls().model_idle_seconds,
+        )
+        model_evict_interval_seconds = _parse_env_float(
+            os.getenv("OPEN_ASR_SERVER_MODEL_EVICT_INTERVAL_SECONDS"),
+            cls().model_evict_interval_seconds,
+        )
+        evict_preloaded_models = _parse_env_bool(
+            os.getenv("OPEN_ASR_SERVER_EVICT_PRELOADED_MODELS"),
+            cls().evict_preloaded_models,
+        )
         return cls(
             preload_models=preload_models,
             default_model=default_model,
@@ -83,4 +109,7 @@ class ServerConfig:
             rate_limit_per_minute=rate_limit_per_minute,
             transcribe_timeout_seconds=transcribe_timeout_seconds,
             transcribe_workers=transcribe_workers,
+            model_idle_seconds=model_idle_seconds,
+            model_evict_interval_seconds=model_evict_interval_seconds,
+            evict_preloaded_models=bool(evict_preloaded_models),
         )
