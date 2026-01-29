@@ -29,6 +29,21 @@ def _audio_duration_seconds(audio_path: Path) -> float:
     return 0.0
 
 
+def _normalize_transcript(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    text = getattr(value, "text", None)
+    if isinstance(text, str):
+        return text
+    if isinstance(value, dict):
+        text = value.get("text")
+        if isinstance(text, str):
+            return text
+    return str(value)
+
+
 class NemoASRBackend:
     """CUDA-first backend powered by NVIDIA NeMo ASR."""
 
@@ -50,7 +65,7 @@ class NemoASRBackend:
             prompt = None
 
         results = self._model.transcribe([str(audio_path)])
-        text = results[0] if results else ""
+        text = _normalize_transcript(results[0]) if results else ""
         duration = _audio_duration_seconds(audio_path)
         return TranscriptionResult(
             text=text,
