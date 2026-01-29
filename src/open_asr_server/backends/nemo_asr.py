@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,12 +13,53 @@ from .base import TranscriptionResult
 logger = logging.getLogger(__name__)
 
 
+def _parse_env_bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    value = value.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def _load_nemo_model(model_id: str):
     from nemo.collections.asr.models import ASRModel  # type: ignore[import-not-found]
 
     if model_id.endswith(".nemo"):
         return ASRModel.restore_from(model_id)
     return ASRModel.from_pretrained(model_name=model_id)
+
+
+def _disable_cuda_graphs(model) -> bool:
+    decoding = getattr(model, "decoding", None)
+    if decoding is None:
+        return False
+
+    updated = False
+    for holder in (
+        decoding,
+        getattr(decoding, "decoding_cfg", None),
+        getattr(decoding, "cfg", None),
+        getattr(model, "cfg", None),
+    ):
+        if holder is None:
+            continue
+        if hasattr(holder, "use_cuda_graphs"):
+            try:
+                setattr(holder, "use_cuda_graphs", False)
+                updated = True
+            except Exception:
+                pass
+        for attr in ("cuda_graphs", "enable_cuda_graphs"):
+            if hasattr(holder, attr):
+                try:
+                    setattr(holder, attr, False)
+                    updated = True
+                except Exception:
+                    pass
+    return updated
 
 
 def _audio_duration_seconds(audio_path: Path) -> float:
@@ -111,6 +153,12 @@ class NemoASRBackend:
     def __init__(self, model_id: str = "nvidia/parakeet-tdt-0.6b-v3") -> None:
         self.model_id = model_id
         self._model = _load_nemo_model(model_id)
+        disable_graphs = _parse_env_bool(
+            os.getenv("OPEN_ASR_NEMO_DISABLE_CUDA_GRAPHS"),
+            True,
+        )
+        if disable_graphs and _disable_cuda_graphs(self._model):
+            logger.info("NeMo: disabled CUDA graphs for decoding")
 
     def transcribe(
         self,
