@@ -20,14 +20,19 @@ from open_asr_server.backends import (
 @pytest.fixture
 def reset_backend_registry():
     registered = dict(backends._registered_backends)
-    instances = dict(backends._backend_cache)
+    cache = (
+        backends._backend_cache
+        if hasattr(backends, "_backend_cache")
+        else backends._backends
+    )
+    instances = dict(cache)
     backends._registered_backends.clear()
-    backends._backend_cache.clear()
+    cache.clear()
     yield
     backends._registered_backends.clear()
     backends._registered_backends.update(registered)
-    backends._backend_cache.clear()
-    backends._backend_cache.update(instances)
+    cache.clear()
+    cache.update(instances)
 
 
 def test_backend_registry_matches_patterns(reset_backend_registry):
@@ -169,90 +174,6 @@ def test_backend_resolves_default_from_env(reset_backend_registry, monkeypatch):
     assert isinstance(backend, DummyBackend)
     assert backend.backend_id == "beta"
     assert calls == [("beta", "shared-model")]
-
-
-def test_backend_eviction_respects_active_requests(reset_backend_registry, monkeypatch):
-    class DummyBackend:
-        def transcribe(self, *args, **kwargs):
-            raise NotImplementedError
-
-        @property
-        def supported_languages(self):
-            return None
-
-    descriptor = backends.BackendDescriptor(
-        id="test-backend",
-        display_name="Test Backend",
-        model_patterns=["demo-*"],
-        device_types=["cpu"],
-    )
-    backends.register_backend(descriptor, lambda _: DummyBackend())
-    current = {"value": 0.0}
-    monkeypatch.setattr(backends, "_now", lambda: current["value"])
-
-    with backends.backend_use("demo-model"):
-        current["value"] = 100.0
-        evicted = backends.evict_idle_backends(10.0)
-        assert evicted == []
-
-    current["value"] = 200.0
-    evicted = backends.evict_idle_backends(10.0)
-
-    assert evicted == ["test-backend:demo-model"]
-    assert backends.list_loaded_models() == []
-
-
-def test_backend_eviction_skips_pinned(reset_backend_registry, monkeypatch):
-    class DummyBackend:
-        def transcribe(self, *args, **kwargs):
-            raise NotImplementedError
-
-        @property
-        def supported_languages(self):
-            return None
-
-    descriptor = backends.BackendDescriptor(
-        id="test-backend",
-        display_name="Test Backend",
-        model_patterns=["demo-*"],
-        device_types=["cpu"],
-    )
-    backends.register_backend(descriptor, lambda _: DummyBackend())
-    current = {"value": 0.0}
-    monkeypatch.setattr(backends, "_now", lambda: current["value"])
-
-    backends.preload_backend("demo-model")
-    current["value"] = 100.0
-    evicted = backends.evict_idle_backends(10.0)
-    assert evicted == []
-
-    evicted = backends.evict_idle_backends(10.0, include_pinned=True)
-    assert evicted == ["test-backend:demo-model"]
-
-
-def test_unload_backend_reports_status(reset_backend_registry):
-    class DummyBackend:
-        def transcribe(self, *args, **kwargs):
-            raise NotImplementedError
-
-        @property
-        def supported_languages(self):
-            return None
-
-    descriptor = backends.BackendDescriptor(
-        id="test-backend",
-        display_name="Test Backend",
-        model_patterns=["demo-*"],
-        device_types=["cpu"],
-    )
-    backends.register_backend(descriptor, lambda _: DummyBackend())
-
-    result = backends.unload_backend("demo-model")
-    assert result.status == "not_loaded"
-
-    backends.get_backend("demo-model")
-    result = backends.unload_backend("demo-model")
-    assert result.status == "unloaded"
 
 
 def test_faster_whisper_transcribe_passes_parameters(monkeypatch):

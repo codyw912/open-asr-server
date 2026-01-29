@@ -42,13 +42,18 @@ class FakeBackend:
 class RouteTests(unittest.TestCase):
     def setUp(self):
         self._registered = dict(backends._registered_backends)
-        self._backends = dict(backends._backends)
+        self._cache = (
+            backends._backend_cache
+            if hasattr(backends, "_backend_cache")
+            else backends._backends
+        )
+        self._backends = dict(self._cache)
 
     def tearDown(self):
         backends._registered_backends.clear()
         backends._registered_backends.update(self._registered)
-        backends._backends.clear()
-        backends._backends.update(self._backends)
+        self._cache.clear()
+        self._cache.update(self._backends)
 
     def _register_backend(self, model_id: str, backend=None):
         backend = backend or FakeBackend()
@@ -66,7 +71,7 @@ class RouteTests(unittest.TestCase):
             metadata={"source": "default"},
         )
         backends._registered_backends.pop(backend_id, None)
-        backends._backends.pop((backend_id, model_id), None)
+        self._cache.pop((backend_id, model_id), None)
         backends.register_backend(descriptor, lambda _: backend)
         return backend
 
