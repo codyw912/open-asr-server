@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import tempfile
 from pathlib import Path
 
 from .base import TranscriptionResult
+
+logger = logging.getLogger(__name__)
 
 
 def _load_nemo_model(model_id: str):
@@ -31,9 +34,29 @@ def _audio_duration_seconds(audio_path: Path) -> float:
     return 0.0
 
 
-def _prepare_audio_path(audio_path: Path) -> tuple[Path, Path | None]:
-    if audio_path.suffix.lower() == ".wav":
-        return audio_path, None
+def _audio_channel_count(audio_path: Path) -> int | None:
+    try:
+        import torchaudio  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        return None
+    try:
+        info = torchaudio.info(str(audio_path))
+    except Exception:
+        return None
+    return info.num_channels
+
+
+def _prepare_audio_path(
+    audio_path: Path, *, force: bool = False
+) -> tuple[Path, Path | None]:
+    channel_count = _audio_channel_count(audio_path)
+    if not force:
+        if channel_count and channel_count > 1:
+            logger.info("NeMo preflight: downmixing %s to mono WAV", audio_path)
+        elif audio_path.suffix.lower() != ".wav":
+            return audio_path, None
+        elif channel_count in (None, 1):
+            return audio_path, None
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
         temp_path = Path(handle.name)
@@ -103,14 +126,26 @@ class NemoASRBackend:
             prompt = None
 
         converted_path = None
+        results = []
+        duration = 0.0
         try:
             audio_path, converted_path = _prepare_audio_path(audio_path)
-            results = self._model.transcribe([str(audio_path)])
-            text = _normalize_transcript(results[0]) if results else ""
-            duration = _audio_duration_seconds(audio_path)
+            try:
+                results = self._model.transcribe([str(audio_path)])
+                duration = _audio_duration_seconds(audio_path)
+            except Exception as exc:
+                if converted_path is not None or audio_path.suffix.lower() == ".wav":
+                    raise
+                logger.warning(
+                    "NeMo fallback: converting %s to WAV (%s)", audio_path, exc
+                )
+                audio_path, converted_path = _prepare_audio_path(audio_path, force=True)
+                results = self._model.transcribe([str(audio_path)])
+                duration = _audio_duration_seconds(audio_path)
         finally:
             if converted_path is not None:
                 converted_path.unlink(missing_ok=True)
+        text = _normalize_transcript(results[0]) if results else ""
         return TranscriptionResult(
             text=text,
             language=language,
