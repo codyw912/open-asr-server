@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import tempfile
 from pathlib import Path
 
 from .base import TranscriptionResult
@@ -27,6 +29,42 @@ def _audio_duration_seconds(audio_path: Path) -> float:
     if info.num_frames and info.sample_rate:
         return float(info.num_frames) / float(info.sample_rate)
     return 0.0
+
+
+def _prepare_audio_path(audio_path: Path) -> tuple[Path, Path | None]:
+    if audio_path.suffix.lower() == ".wav":
+        return audio_path, None
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
+        temp_path = Path(handle.name)
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(audio_path),
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                str(temp_path),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError as exc:
+        temp_path.unlink(missing_ok=True)
+        raise RuntimeError(
+            "ffmpeg is required to convert audio for the NeMo backend."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        temp_path.unlink(missing_ok=True)
+        raise RuntimeError("Failed to convert audio with ffmpeg.") from exc
+
+    return temp_path, temp_path
 
 
 def _normalize_transcript(value) -> str:
@@ -64,9 +102,15 @@ class NemoASRBackend:
         if prompt:
             prompt = None
 
-        results = self._model.transcribe([str(audio_path)])
-        text = _normalize_transcript(results[0]) if results else ""
-        duration = _audio_duration_seconds(audio_path)
+        converted_path = None
+        try:
+            audio_path, converted_path = _prepare_audio_path(audio_path)
+            results = self._model.transcribe([str(audio_path)])
+            text = _normalize_transcript(results[0]) if results else ""
+            duration = _audio_duration_seconds(audio_path)
+        finally:
+            if converted_path is not None:
+                converted_path.unlink(missing_ok=True)
         return TranscriptionResult(
             text=text,
             language=language,

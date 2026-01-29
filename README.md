@@ -72,6 +72,9 @@ install).
 Install the CUDA-enabled torch build before the `nemo` extra to avoid pulling in
 a CPU-only torch dependency.
 
+NeMo uses ffmpeg to convert non-WAV inputs to 16kHz mono WAV; ensure ffmpeg is
+available in your environment.
+
 Tip: CUDA backends are often easiest to run in Docker with the NVIDIA Container
 Toolkit; we do not ship a container image yet, but this keeps CUDA deps isolated.
 
@@ -94,12 +97,15 @@ docker run --rm -it --gpus all \
 Dockerfile alternative (dev-first split):
 
 ```bash
-docker build -f Dockerfile.nemo.base -t open-asr-nemo-base:torch2.5.1-cu121 .
+docker build -f Dockerfile.nemo.base \
+  --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
+  -t open-asr-nemo-base:torch2.5.1-cu121 .
 docker build -f Dockerfile.nemo --build-arg BASE_IMAGE=open-asr-nemo-base:torch2.5.1-cu121 -t open-asr-nemo-dev:torch2.5.1-cu121 .
 docker run --rm -it --gpus all -v "$(pwd)":/workspace -w /workspace open-asr-nemo-dev:torch2.5.1-cu121
 
 docker build -f Dockerfile.nemo.base \
   --build-arg CUDA_BASE_IMAGE=pytorch/pytorch:2.5.1-cuda11.8-cudnn8-runtime \
+  --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu118 \
   -t open-asr-nemo-base:torch2.5.1-cu118 .
 docker build -f Dockerfile.nemo \
   --build-arg BASE_IMAGE=open-asr-nemo-base:torch2.5.1-cu118 \
@@ -113,7 +119,7 @@ Makefile helpers:
 make nemo-base
 make nemo-dev
 make nemo-run
-make nemo-base CUDA_BASE_IMAGE=pytorch/pytorch:2.5.1-cuda11.8-cudnn8-runtime BASE_TAG=torch2.5.1-cu118
+make nemo-base CUDA_BASE_IMAGE=pytorch/pytorch:2.5.1-cuda11.8-cudnn8-runtime BASE_TAG=torch2.5.1-cu118 TORCH_INDEX_URL=https://download.pytorch.org/whl/cu118
 make nemo-dev BASE_TAG=torch2.5.1-cu118 DEV_TAG=torch2.5.1-cu118
 ```
 
