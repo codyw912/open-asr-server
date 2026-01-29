@@ -277,3 +277,66 @@ class RouteTests(unittest.TestCase):
         self.assertIn("conflict-a", detail)
         self.assertIn("conflict-b", detail)
         self.assertIn("OPEN_ASR_DEFAULT_BACKEND", detail)
+
+    def test_admin_unload_model(self):
+        self._register_backend("test-model")
+        backends.get_backend("test-model")
+        client = self._client(ServerConfig(preload_models=[]))
+
+        response = client.post(
+            "/v1/admin/models/unload",
+            json={"model": "test-model"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["unloaded"], ["test-test-model:test-model"])
+        self.assertEqual(payload["skipped"], [])
+        self.assertEqual(payload["loaded"], [])
+
+    def test_admin_unload_all_models_respects_pinned(self):
+        self._register_backend("test-model")
+        self._register_backend("test-model-2")
+        backends.preload_backend("test-model")
+        backends.get_backend("test-model-2")
+        client = self._client(ServerConfig(preload_models=[]))
+
+        response = client.post(
+            "/v1/admin/models/unload-all",
+            json={"include_pinned": False},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["unloaded"], ["test-test-model-2:test-model-2"])
+        self.assertEqual(payload["skipped"], ["test-test-model:test-model"])
+        self.assertEqual(payload["loaded"], ["test-test-model:test-model"])
+
+        response = client.post(
+            "/v1/admin/models/unload-all",
+            json={"include_pinned": True},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("test-test-model:test-model", payload["unloaded"])
+        self.assertEqual(payload["skipped"], [])
+        self.assertEqual(payload["loaded"], [])
+
+    def test_admin_models_status(self):
+        self._register_backend("test-model")
+        self._register_backend("test-model-2")
+        backends.preload_backend("test-model")
+        backends.get_backend("test-model-2")
+        client = self._client(ServerConfig(preload_models=[]))
+
+        response = client.get("/v1/admin/models/status")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        ids = {entry["id"] for entry in data}
+        self.assertIn("test-test-model:test-model", ids)
+        self.assertIn("test-test-model-2:test-model-2", ids)
+        pinned = {entry["id"]: entry["pinned"] for entry in data}
+        self.assertTrue(pinned["test-test-model:test-model"])
+        self.assertFalse(pinned["test-test-model-2:test-model-2"])

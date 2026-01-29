@@ -182,6 +182,8 @@ curl -X POST http://127.0.0.1:8000/v1/admin/models/unload \
 curl -X POST http://127.0.0.1:8000/v1/admin/models/unload-all \
   -H "Content-Type: application/json" \
   -d '{"include_pinned":true}'
+
+curl http://127.0.0.1:8000/v1/admin/models/status
 ```
 
 ## Sample audio

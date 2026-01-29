@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 import os
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, Callable, cast
+from typing import Any, Callable, Iterator, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from .base import TranscriptionBackend
+
+logger = logging.getLogger(__name__)
 
 _ENTRY_POINT_GROUP = "open_asr_server.backends"
 
@@ -54,6 +60,29 @@ class RegisteredBackend:
     factory: Callable[[str], TranscriptionBackend]
 
 
+@dataclass
+class BackendCacheEntry:
+    backend: TranscriptionBackend
+    last_used: float
+    pinned: bool = False
+    active_requests: int = 0
+
+
+@dataclass(frozen=True)
+class BackendUnloadResult:
+    status: str
+    model: str | None = None
+
+
+@dataclass(frozen=True)
+class BackendStatusEntry:
+    backend_id: str
+    model_id: str
+    pinned: bool
+    active_requests: int
+    idle_seconds: float
+
+
 class BackendResolutionError(Exception):
     """Base error for backend resolution issues."""
 
@@ -76,8 +105,13 @@ class BackendConflictError(BackendResolutionError):
         self.candidates = candidates
 
 
-_backends: dict[tuple[str, str], TranscriptionBackend] = {}
+_backend_cache: dict[tuple[str, str], BackendCacheEntry] = {}
 _registered_backends: dict[str, RegisteredBackend] = {}
+_cache_lock = threading.Lock()
+
+
+def _now() -> float:
+    return time.monotonic()
 
 
 def register_backend(
@@ -132,6 +166,52 @@ def _resolve_backend_id(model: str, default_backend: str | None) -> tuple[str, s
     raise BackendConflictError(model, [descriptor.id for descriptor in matches])
 
 
+def _format_backend_spec(backend_id: str, model_id: str) -> str:
+    return f"{backend_id}:{model_id}"
+
+
+def _get_or_create_entry(
+    backend_id: str, model_id: str, *, pinned: bool
+) -> BackendCacheEntry:
+    key = (backend_id, model_id)
+    with _cache_lock:
+        entry = _backend_cache.get(key)
+        if entry is None:
+            backend = _registered_backends[backend_id].factory(model_id)
+            entry = BackendCacheEntry(
+                backend=backend,
+                last_used=_now(),
+                pinned=pinned,
+            )
+            _backend_cache[key] = entry
+        else:
+            if pinned:
+                entry.pinned = True
+            entry.last_used = _now()
+    return entry
+
+
+def _maybe_clear_torch_cache() -> None:
+    try:
+        import torch  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        return
+    if hasattr(torch, "cuda") and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def _cleanup_backend(backend: TranscriptionBackend) -> None:
+    for method in ("close", "cleanup", "shutdown"):
+        func = getattr(backend, method, None)
+        if callable(func):
+            try:
+                func()
+            except Exception:
+                pass
+            break
+    _maybe_clear_torch_cache()
+
+
 def get_backend(model: str, default_backend: str | None = None) -> TranscriptionBackend:
     """Get or create backend for model (lazy loading).
 
@@ -146,15 +226,32 @@ def get_backend(model: str, default_backend: str | None = None) -> Transcription
         default_backend = _default_backend_from_env()
 
     backend_id, model_id = _resolve_backend_id(model, default_backend)
-    key = (backend_id, model_id)
-    if key not in _backends:
-        backend = _registered_backends[backend_id].factory(model_id)
-        _backends[key] = backend
-    return _backends[key]
+    entry = _get_or_create_entry(backend_id, model_id, pinned=False)
+    return entry.backend
+
+
+@contextmanager
+def backend_use(
+    model: str, default_backend: str | None = None
+) -> Iterator[TranscriptionBackend]:
+    if default_backend is None:
+        default_backend = _default_backend_from_env()
+
+    backend_id, model_id = _resolve_backend_id(model, default_backend)
+    entry = _get_or_create_entry(backend_id, model_id, pinned=False)
+    with _cache_lock:
+        entry.active_requests += 1
+        entry.last_used = _now()
+    try:
+        yield entry.backend
+    finally:
+        with _cache_lock:
+            entry.active_requests = max(0, entry.active_requests - 1)
+            entry.last_used = _now()
 
 
 def preload_backend(
-    model: str, default_backend: str | None = None
+    model: str, default_backend: str | None = None, *, pinned: bool = True
 ) -> TranscriptionBackend:
     """Eagerly load a backend.
 
@@ -165,7 +262,11 @@ def preload_backend(
     Returns:
         Backend instance.
     """
-    return get_backend(model, default_backend=default_backend)
+    if default_backend is None:
+        default_backend = _default_backend_from_env()
+    backend_id, model_id = _resolve_backend_id(model, default_backend)
+    entry = _get_or_create_entry(backend_id, model_id, pinned=pinned)
+    return entry.backend
 
 
 def list_backend_descriptors() -> list[BackendDescriptor]:
@@ -183,12 +284,117 @@ def list_registered_patterns() -> list[str]:
 
 def list_loaded_model_specs() -> list[tuple[str, str]]:
     """List loaded backend/model pairs."""
-    return list(_backends.keys())
+    return sorted(_backend_cache.keys())
 
 
 def list_loaded_models() -> list[str]:
     """List loaded model IDs with backend prefixes."""
-    return [f"{backend_id}:{model_id}" for backend_id, model_id in _backends.keys()]
+    return [
+        _format_backend_spec(backend_id, model_id)
+        for backend_id, model_id in sorted(_backend_cache.keys())
+    ]
+
+
+def unload_backend(
+    model: str,
+    default_backend: str | None = None,
+    *,
+    include_pinned: bool = False,
+) -> BackendUnloadResult:
+    if default_backend is None:
+        default_backend = _default_backend_from_env()
+
+    backend_id, model_id = _resolve_backend_id(model, default_backend)
+    key = (backend_id, model_id)
+    with _cache_lock:
+        entry = _backend_cache.get(key)
+        if entry is None:
+            return BackendUnloadResult(status="not_loaded")
+        if entry.active_requests > 0:
+            return BackendUnloadResult(
+                status="in_use", model=_format_backend_spec(backend_id, model_id)
+            )
+        if entry.pinned and not include_pinned:
+            return BackendUnloadResult(
+                status="pinned", model=_format_backend_spec(backend_id, model_id)
+            )
+        entry = _backend_cache.pop(key)
+
+    _cleanup_backend(entry.backend)
+    logger.info("Unloaded backend %s", _format_backend_spec(backend_id, model_id))
+    return BackendUnloadResult(
+        status="unloaded", model=_format_backend_spec(backend_id, model_id)
+    )
+
+
+def unload_all_backends(*, include_pinned: bool = False) -> tuple[list[str], list[str]]:
+    to_remove: list[tuple[str, str, BackendCacheEntry]] = []
+    skipped: list[str] = []
+    with _cache_lock:
+        for (backend_id, model_id), entry in list(_backend_cache.items()):
+            if entry.active_requests > 0:
+                skipped.append(_format_backend_spec(backend_id, model_id))
+                continue
+            if entry.pinned and not include_pinned:
+                skipped.append(_format_backend_spec(backend_id, model_id))
+                continue
+            to_remove.append((backend_id, model_id, entry))
+            _backend_cache.pop((backend_id, model_id), None)
+
+    unloaded = []
+    for backend_id, model_id, entry in to_remove:
+        _cleanup_backend(entry.backend)
+        unloaded.append(_format_backend_spec(backend_id, model_id))
+    if unloaded:
+        logger.info("Unloaded backends: %s", ", ".join(unloaded))
+    return unloaded, skipped
+
+
+def evict_idle_backends(
+    idle_seconds: float,
+    *,
+    include_pinned: bool = False,
+) -> list[str]:
+    if idle_seconds <= 0:
+        return []
+    now = _now()
+    to_remove: list[tuple[str, str, BackendCacheEntry]] = []
+    with _cache_lock:
+        for (backend_id, model_id), entry in list(_backend_cache.items()):
+            if entry.active_requests > 0:
+                continue
+            if entry.pinned and not include_pinned:
+                continue
+            if now - entry.last_used >= idle_seconds:
+                to_remove.append((backend_id, model_id, entry))
+                _backend_cache.pop((backend_id, model_id), None)
+
+    evicted = []
+    for backend_id, model_id, entry in to_remove:
+        _cleanup_backend(entry.backend)
+        evicted.append(_format_backend_spec(backend_id, model_id))
+    if evicted:
+        logger.info("Evicted idle backends: %s", ", ".join(evicted))
+    return evicted
+
+
+def list_backend_status_entries() -> list[BackendStatusEntry]:
+    now = _now()
+    entries: list[BackendStatusEntry] = []
+    with _cache_lock:
+        for (backend_id, model_id), entry in _backend_cache.items():
+            idle_seconds = max(0.0, now - entry.last_used)
+            entries.append(
+                BackendStatusEntry(
+                    backend_id=backend_id,
+                    model_id=model_id,
+                    pinned=entry.pinned,
+                    active_requests=entry.active_requests,
+                    idle_seconds=idle_seconds,
+                )
+            )
+    entries.sort(key=lambda item: (item.backend_id, item.model_id))
+    return entries
 
 
 def _load_entry_point(entry_point: metadata.EntryPoint) -> None:

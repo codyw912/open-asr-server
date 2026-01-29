@@ -15,11 +15,14 @@ from fastapi.responses import PlainTextResponse
 from .backends import (
     BackendConflictError,
     BackendNotFoundError,
-    get_backend,
+    backend_use,
     list_backend_descriptors,
+    list_backend_status_entries,
     list_loaded_models,
     list_loaded_model_specs,
     list_registered_patterns,
+    unload_all_backends,
+    unload_backend,
 )
 from .config import ServerConfig
 from .formatters import to_json, to_srt, to_text, to_verbose_json, to_vtt
@@ -29,6 +32,11 @@ from .models import (
     ModelListResponse,
     ModelMetadataEntry,
     ModelMetadataListResponse,
+    ModelUnloadAllRequest,
+    ModelUnloadRequest,
+    ModelUnloadResponse,
+    ModelStatusEntry,
+    ModelStatusResponse,
     ResponseFormat,
 )
 
@@ -196,9 +204,61 @@ async def create_transcription(
     _ensure_rate_limit(request, config.api_key)
     _ensure_model_allowed(model, config.allowed_models)
 
-    # Get backend for model
     try:
-        backend = get_backend(model, default_backend=config.default_backend)
+        with backend_use(model, default_backend=config.default_backend) as backend:
+            # Save upload to temp file
+            tmp_path = await _save_upload_to_tempfile(file, config.max_upload_bytes)
+
+            try:
+                # Transcribe
+                word_timestamps = bool(
+                    timestamp_granularities and "word" in timestamp_granularities
+                )
+                transcribe_kwargs = {
+                    "language": language,
+                    "temperature": temperature,
+                    "word_timestamps": word_timestamps,
+                }
+                if (
+                    prompt
+                    and "prompt" in inspect.signature(backend.transcribe).parameters
+                ):
+                    transcribe_kwargs["prompt"] = prompt
+
+                executor = getattr(request.app.state, "transcribe_executor", None)
+                result = await _run_transcription(
+                    backend,
+                    tmp_path,
+                    transcribe_kwargs,
+                    config.transcribe_timeout_seconds,
+                    executor,
+                )
+
+                # Format response based on requested format
+                if response_format == "text":
+                    return PlainTextResponse(to_text(result))
+                elif response_format == "srt":
+                    return PlainTextResponse(to_srt(result), media_type="text/plain")
+                elif response_format == "vtt":
+                    return PlainTextResponse(to_vtt(result), media_type="text/vtt")
+                elif response_format == "verbose_json":
+                    include_words = bool(
+                        timestamp_granularities and "word" in timestamp_granularities
+                    )
+                    include_segments = (
+                        not timestamp_granularities
+                        or "segment" in timestamp_granularities
+                    )
+                    return to_verbose_json(
+                        result,
+                        include_words=include_words,
+                        include_segments=include_segments,
+                    )
+                else:  # json (default)
+                    return to_json(result)
+
+            finally:
+                tmp_path.unlink(missing_ok=True)
     except BackendNotFoundError as exc:
         raise HTTPException(
             status_code=404,
@@ -217,54 +277,6 @@ async def create_transcription(
                 + ". Use backend:model or set OPEN_ASR_DEFAULT_BACKEND."
             ),
         )
-
-    # Save upload to temp file
-    tmp_path = await _save_upload_to_tempfile(file, config.max_upload_bytes)
-
-    try:
-        # Transcribe
-        word_timestamps = bool(
-            timestamp_granularities and "word" in timestamp_granularities
-        )
-        transcribe_kwargs = {
-            "language": language,
-            "temperature": temperature,
-            "word_timestamps": word_timestamps,
-        }
-        if prompt and "prompt" in inspect.signature(backend.transcribe).parameters:
-            transcribe_kwargs["prompt"] = prompt
-
-        executor = getattr(request.app.state, "transcribe_executor", None)
-        result = await _run_transcription(
-            backend,
-            tmp_path,
-            transcribe_kwargs,
-            config.transcribe_timeout_seconds,
-            executor,
-        )
-
-        # Format response based on requested format
-        if response_format == "text":
-            return PlainTextResponse(to_text(result))
-        elif response_format == "srt":
-            return PlainTextResponse(to_srt(result), media_type="text/plain")
-        elif response_format == "vtt":
-            return PlainTextResponse(to_vtt(result), media_type="text/vtt")
-        elif response_format == "verbose_json":
-            include_words = bool(
-                timestamp_granularities and "word" in timestamp_granularities
-            )
-            include_segments = (
-                not timestamp_granularities or "segment" in timestamp_granularities
-            )
-            return to_verbose_json(
-                result, include_words=include_words, include_segments=include_segments
-            )
-        else:  # json (default)
-            return to_json(result)
-
-    finally:
-        tmp_path.unlink(missing_ok=True)
 
 
 @router.get("/v1/models", response_model=ModelListResponse)
@@ -338,3 +350,90 @@ async def list_models_metadata(request: Request):
 
     data = [entries[key] for key in sorted(entries.keys())]
     return ModelMetadataListResponse(data=data)
+
+
+@router.post("/v1/admin/models/unload", response_model=ModelUnloadResponse)
+async def unload_model(request: Request, payload: ModelUnloadRequest):
+    """Unload a single backend model instance."""
+    config: ServerConfig = request.app.state.config
+    _ensure_authorized(request, config.api_key)
+    _ensure_rate_limit(request, config.api_key)
+
+    try:
+        result = unload_backend(
+            payload.model,
+            default_backend=config.default_backend,
+            include_pinned=payload.force,
+        )
+    except BackendNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Model '{exc.model}' not found. Available patterns: {exc.patterns}"
+            ),
+        )
+    except BackendConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Model '"
+                + exc.model
+                + "' matches multiple backends: "
+                + ", ".join(sorted(exc.candidates))
+                + ". Use backend:model or set OPEN_ASR_DEFAULT_BACKEND."
+            ),
+        )
+
+    if result.status == "not_loaded":
+        raise HTTPException(status_code=404, detail="Model is not loaded")
+    if result.status == "pinned":
+        raise HTTPException(
+            status_code=409,
+            detail="Model is pinned; set force=true to unload",
+        )
+    if result.status == "in_use":
+        raise HTTPException(status_code=409, detail="Model is in use")
+
+    return ModelUnloadResponse(
+        unloaded=[result.model] if result.model else [],
+        skipped=[],
+        loaded=list_loaded_models(),
+    )
+
+
+@router.post("/v1/admin/models/unload-all", response_model=ModelUnloadResponse)
+async def unload_all_models(request: Request, payload: ModelUnloadAllRequest):
+    """Unload all cached backend model instances."""
+    config: ServerConfig = request.app.state.config
+    _ensure_authorized(request, config.api_key)
+    _ensure_rate_limit(request, config.api_key)
+
+    unloaded, skipped = unload_all_backends(
+        include_pinned=payload.include_pinned,
+    )
+    return ModelUnloadResponse(
+        unloaded=unloaded,
+        skipped=skipped,
+        loaded=list_loaded_models(),
+    )
+
+
+@router.get("/v1/admin/models/status", response_model=ModelStatusResponse)
+async def model_status(request: Request):
+    """Get status for loaded backend model instances."""
+    config: ServerConfig = request.app.state.config
+    _ensure_authorized(request, config.api_key)
+    _ensure_rate_limit(request, config.api_key)
+
+    data = [
+        ModelStatusEntry(
+            id=f"{entry.backend_id}:{entry.model_id}",
+            backend=entry.backend_id,
+            model=entry.model_id,
+            pinned=entry.pinned,
+            active_requests=entry.active_requests,
+            idle_seconds=entry.idle_seconds,
+        )
+        for entry in list_backend_status_entries()
+    ]
+    return ModelStatusResponse(data=data)
