@@ -17,6 +17,7 @@ from .backends import (
     BackendNotFoundError,
     backend_use,
     list_backend_descriptors,
+    list_backend_status_entries,
     list_loaded_models,
     list_loaded_model_specs,
     list_registered_patterns,
@@ -34,6 +35,8 @@ from .models import (
     ModelUnloadAllRequest,
     ModelUnloadRequest,
     ModelUnloadResponse,
+    ModelStatusEntry,
+    ModelStatusResponse,
     ResponseFormat,
 )
 
@@ -413,3 +416,24 @@ async def unload_all_models(request: Request, payload: ModelUnloadAllRequest):
         skipped=skipped,
         loaded=list_loaded_models(),
     )
+
+
+@router.get("/v1/admin/models/status", response_model=ModelStatusResponse)
+async def model_status(request: Request):
+    """Get status for loaded backend model instances."""
+    config: ServerConfig = request.app.state.config
+    _ensure_authorized(request, config.api_key)
+    _ensure_rate_limit(request, config.api_key)
+
+    data = [
+        ModelStatusEntry(
+            id=f"{entry.backend_id}:{entry.model_id}",
+            backend=entry.backend_id,
+            model=entry.model_id,
+            pinned=entry.pinned,
+            active_requests=entry.active_requests,
+            idle_seconds=entry.idle_seconds,
+        )
+        for entry in list_backend_status_entries()
+    ]
+    return ModelStatusResponse(data=data)

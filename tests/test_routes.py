@@ -322,3 +322,21 @@ class RouteTests(unittest.TestCase):
         self.assertIn("test-test-model:test-model", payload["unloaded"])
         self.assertEqual(payload["skipped"], [])
         self.assertEqual(payload["loaded"], [])
+
+    def test_admin_models_status(self):
+        self._register_backend("test-model")
+        self._register_backend("test-model-2")
+        backends.preload_backend("test-model")
+        backends.get_backend("test-model-2")
+        client = self._client(ServerConfig(preload_models=[]))
+
+        response = client.get("/v1/admin/models/status")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        ids = {entry["id"] for entry in data}
+        self.assertIn("test-test-model:test-model", ids)
+        self.assertIn("test-test-model-2:test-model-2", ids)
+        pinned = {entry["id"]: entry["pinned"] for entry in data}
+        self.assertTrue(pinned["test-test-model:test-model"])
+        self.assertFalse(pinned["test-test-model-2:test-model-2"])

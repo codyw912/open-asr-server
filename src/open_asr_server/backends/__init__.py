@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 import os
 import threading
 import time
@@ -14,6 +15,8 @@ from typing import Any, Callable, Iterator, cast
 from pydantic import BaseModel, ConfigDict, Field
 
 from .base import TranscriptionBackend
+
+logger = logging.getLogger(__name__)
 
 _ENTRY_POINT_GROUP = "open_asr_server.backends"
 
@@ -69,6 +72,15 @@ class BackendCacheEntry:
 class BackendUnloadResult:
     status: str
     model: str | None = None
+
+
+@dataclass(frozen=True)
+class BackendStatusEntry:
+    backend_id: str
+    model_id: str
+    pinned: bool
+    active_requests: int
+    idle_seconds: float
 
 
 class BackendResolutionError(Exception):
@@ -309,6 +321,7 @@ def unload_backend(
         entry = _backend_cache.pop(key)
 
     _cleanup_backend(entry.backend)
+    logger.info("Unloaded backend %s", _format_backend_spec(backend_id, model_id))
     return BackendUnloadResult(
         status="unloaded", model=_format_backend_spec(backend_id, model_id)
     )
@@ -332,6 +345,8 @@ def unload_all_backends(*, include_pinned: bool = False) -> tuple[list[str], lis
     for backend_id, model_id, entry in to_remove:
         _cleanup_backend(entry.backend)
         unloaded.append(_format_backend_spec(backend_id, model_id))
+    if unloaded:
+        logger.info("Unloaded backends: %s", ", ".join(unloaded))
     return unloaded, skipped
 
 
@@ -358,7 +373,28 @@ def evict_idle_backends(
     for backend_id, model_id, entry in to_remove:
         _cleanup_backend(entry.backend)
         evicted.append(_format_backend_spec(backend_id, model_id))
+    if evicted:
+        logger.info("Evicted idle backends: %s", ", ".join(evicted))
     return evicted
+
+
+def list_backend_status_entries() -> list[BackendStatusEntry]:
+    now = _now()
+    entries: list[BackendStatusEntry] = []
+    with _cache_lock:
+        for (backend_id, model_id), entry in _backend_cache.items():
+            idle_seconds = max(0.0, now - entry.last_used)
+            entries.append(
+                BackendStatusEntry(
+                    backend_id=backend_id,
+                    model_id=model_id,
+                    pinned=entry.pinned,
+                    active_requests=entry.active_requests,
+                    idle_seconds=idle_seconds,
+                )
+            )
+    entries.sort(key=lambda item: (item.backend_id, item.model_id))
+    return entries
 
 
 def _load_entry_point(entry_point: metadata.EntryPoint) -> None:

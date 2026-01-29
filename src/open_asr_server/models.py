@@ -122,3 +122,20 @@ class ModelUnloadResponse(BaseModel):
     unloaded: list[str]
     skipped: list[str] = Field(default_factory=list)
     loaded: list[str]
+
+
+class ModelStatusEntry(BaseModel):
+    """Status for a loaded backend model instance."""
+
+    id: str
+    backend: str
+    model: str
+    pinned: bool
+    active_requests: int
+    idle_seconds: float
+
+
+class ModelStatusResponse(BaseModel):
+    """Response payload for model status operations."""
+
+    data: list[ModelStatusEntry]
