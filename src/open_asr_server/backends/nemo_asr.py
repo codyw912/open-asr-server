@@ -115,7 +115,9 @@ class NemoASRBackend:
                 raise
             converted_path = None
             try:
-                logger.info("NeMo fallback: converting %s to WAV", audio_path)
+                logger.warning(
+                    "NeMo fallback: converting %s to WAV (%s)", audio_path, exc
+                )
                 audio_path, converted_path = _prepare_audio_path(audio_path)
                 results = self._model.transcribe([str(audio_path)])
                 duration = _audio_duration_seconds(audio_path)
