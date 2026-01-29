@@ -102,15 +102,25 @@ class NemoASRBackend:
         if prompt:
             prompt = None
 
-        converted_path = None
+        results = []
+        duration = 0.0
         try:
-            audio_path, converted_path = _prepare_audio_path(audio_path)
             results = self._model.transcribe([str(audio_path)])
-            text = _normalize_transcript(results[0]) if results else ""
             duration = _audio_duration_seconds(audio_path)
-        finally:
-            if converted_path is not None:
-                converted_path.unlink(missing_ok=True)
+        except Exception as exc:
+            if audio_path.suffix.lower() == ".wav":
+                raise
+            converted_path = None
+            try:
+                audio_path, converted_path = _prepare_audio_path(audio_path)
+                results = self._model.transcribe([str(audio_path)])
+                duration = _audio_duration_seconds(audio_path)
+            except Exception as fallback_exc:
+                raise fallback_exc from exc
+            finally:
+                if converted_path is not None:
+                    converted_path.unlink(missing_ok=True)
+        text = _normalize_transcript(results[0]) if results else ""
         return TranscriptionResult(
             text=text,
             language=language,
