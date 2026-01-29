@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.6
+ARG CUDA_BASE_IMAGE=pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
+FROM ${CUDA_BASE_IMAGE}
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+ARG UV_HTTP_TIMEOUT=300
+ARG UV_HTTP_RETRIES=5
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121
+
+ENV PATH="/root/.local/bin:${PATH}"
+ENV UV_HTTP_TIMEOUT=${UV_HTTP_TIMEOUT}
+ENV UV_HTTP_RETRIES=${UV_HTTP_RETRIES}
+
+WORKDIR /workspace
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        ffmpeg \
+        libsndfile1 \
+        libsox-fmt-all \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV VIRTUAL_ENV=/opt/venv
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+
+RUN uv venv --system-site-packages --python "$(command -v python)" ${VIRTUAL_ENV}
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python ${VIRTUAL_ENV}/bin/python --upgrade \
+        torch torchaudio torchvision --index-url ${TORCH_INDEX_URL}
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python ${VIRTUAL_ENV}/bin/python "nemo_toolkit[asr]"

@@ -10,6 +10,7 @@ from open_asr_server.backends import (
     faster_whisper,
     kyutai_mlx,
     lightning_whisper,
+    nemo_asr,
     parakeet,
     whisper,
     whisper_cpp,
@@ -19,14 +20,19 @@ from open_asr_server.backends import (
 @pytest.fixture
 def reset_backend_registry():
     registered = dict(backends._registered_backends)
-    instances = dict(backends._backends)
+    cache = (
+        backends._backend_cache
+        if hasattr(backends, "_backend_cache")
+        else backends._backends
+    )
+    instances = dict(cache)
     backends._registered_backends.clear()
-    backends._backends.clear()
+    cache.clear()
     yield
     backends._registered_backends.clear()
     backends._registered_backends.update(registered)
-    backends._backends.clear()
-    backends._backends.update(instances)
+    cache.clear()
+    cache.update(instances)
 
 
 def test_backend_registry_matches_patterns(reset_backend_registry):
@@ -291,6 +297,165 @@ def test_faster_whisper_smoke():
 
     assert result.text.strip()
     assert result.duration > 0
+
+
+def test_nemo_backend_uses_from_pretrained(monkeypatch):
+    calls = {}
+
+    class DummyModel:
+        def transcribe(self, audio_paths):
+            calls["audio_paths"] = audio_paths
+            return ["hello"]
+
+    class DummyASRModel:
+        @staticmethod
+        def from_pretrained(model_name):
+            calls["model_name"] = model_name
+            return DummyModel()
+
+        @staticmethod
+        def restore_from(path):
+            calls["restore_from"] = path
+            return DummyModel()
+
+    module = types.ModuleType("nemo.collections.asr.models")
+    setattr(module, "ASRModel", DummyASRModel)
+    monkeypatch.setitem(sys.modules, "nemo", types.ModuleType("nemo"))
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections", types.ModuleType("nemo.collections")
+    )
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections.asr", types.ModuleType("nemo.collections.asr")
+    )
+    monkeypatch.setitem(sys.modules, "nemo.collections.asr.models", module)
+    monkeypatch.setattr(nemo_asr, "_audio_duration_seconds", lambda _path: 1.5)
+
+    backend = nemo_asr.NemoASRBackend("nvidia/parakeet-test")
+    result = backend.transcribe(Path("audio.wav"), language="en")
+
+    assert calls["model_name"] == "nvidia/parakeet-test"
+    assert calls["audio_paths"] == ["audio.wav"]
+    assert result.text == "hello"
+    assert result.language == "en"
+    assert result.duration == 1.5
+
+
+def test_nemo_backend_restores_nemo_file(monkeypatch):
+    calls = {}
+
+    class DummyModel:
+        def transcribe(self, audio_paths):
+            calls["audio_paths"] = audio_paths
+            return ["ok"]
+
+    class DummyASRModel:
+        @staticmethod
+        def from_pretrained(model_name):
+            calls["model_name"] = model_name
+            return DummyModel()
+
+        @staticmethod
+        def restore_from(path):
+            calls["restore_from"] = path
+            return DummyModel()
+
+    module = types.ModuleType("nemo.collections.asr.models")
+    setattr(module, "ASRModel", DummyASRModel)
+    monkeypatch.setitem(sys.modules, "nemo", types.ModuleType("nemo"))
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections", types.ModuleType("nemo.collections")
+    )
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections.asr", types.ModuleType("nemo.collections.asr")
+    )
+    monkeypatch.setitem(sys.modules, "nemo.collections.asr.models", module)
+    monkeypatch.setattr(nemo_asr, "_audio_duration_seconds", lambda _path: 0.5)
+
+    backend = nemo_asr.NemoASRBackend("local_model.nemo")
+    result = backend.transcribe(Path("audio.wav"))
+
+    assert calls["restore_from"] == "local_model.nemo"
+    assert calls["audio_paths"] == ["audio.wav"]
+    assert result.text == "ok"
+    assert result.duration == 0.5
+
+
+def test_nemo_prepare_audio_passthrough(tmp_path):
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"data")
+
+    prepared, temp_path = nemo_asr._prepare_audio_path(audio_path)
+
+    assert prepared == audio_path
+    assert temp_path is None
+
+
+def test_nemo_prepare_audio_converts_non_wav(tmp_path, monkeypatch):
+    audio_path = tmp_path / "audio.flac"
+    audio_path.write_bytes(b"data")
+    calls = {}
+
+    def fake_run(cmd, check, stdout, stderr):
+        calls["cmd"] = cmd
+        return None
+
+    monkeypatch.setattr(nemo_asr, "_audio_channel_count", lambda _path: None)
+    monkeypatch.setattr(nemo_asr.subprocess, "run", fake_run)
+
+    prepared, temp_path = nemo_asr._prepare_audio_path(audio_path)
+
+    assert prepared == audio_path
+    assert temp_path is None
+
+    prepared, temp_path = nemo_asr._prepare_audio_path(audio_path, force=True)
+
+    assert prepared.suffix == ".wav"
+    assert temp_path == prepared
+    assert calls["cmd"][0] == "ffmpeg"
+    if temp_path is not None:
+        temp_path.unlink(missing_ok=True)
+
+
+def test_nemo_prepare_audio_converts_stereo_flac(tmp_path, monkeypatch):
+    audio_path = tmp_path / "audio.flac"
+    audio_path.write_bytes(b"data")
+    calls = {}
+
+    def fake_run(cmd, check, stdout, stderr):
+        calls["cmd"] = cmd
+        return None
+
+    monkeypatch.setattr(nemo_asr, "_audio_channel_count", lambda _path: 2)
+    monkeypatch.setattr(nemo_asr.subprocess, "run", fake_run)
+
+    prepared, temp_path = nemo_asr._prepare_audio_path(audio_path)
+
+    assert prepared.suffix == ".wav"
+    assert temp_path == prepared
+    assert calls["cmd"][0] == "ffmpeg"
+    if temp_path is not None:
+        temp_path.unlink(missing_ok=True)
+
+
+def test_nemo_prepare_audio_converts_stereo_wav(tmp_path, monkeypatch):
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"data")
+    calls = {}
+
+    def fake_run(cmd, check, stdout, stderr):
+        calls["cmd"] = cmd
+        return None
+
+    monkeypatch.setattr(nemo_asr, "_audio_channel_count", lambda _path: 2)
+    monkeypatch.setattr(nemo_asr.subprocess, "run", fake_run)
+
+    prepared, temp_path = nemo_asr._prepare_audio_path(audio_path)
+
+    assert prepared.suffix == ".wav"
+    assert temp_path == prepared
+    assert calls["cmd"][0] == "ffmpeg"
+    if temp_path is not None:
+        temp_path.unlink(missing_ok=True)
 
 
 def test_whisper_cpp_transcribe_scales_segments_and_params(monkeypatch):

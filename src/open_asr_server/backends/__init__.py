@@ -243,5 +243,6 @@ from . import lightning_whisper as _lightning_whisper  # noqa: F401, E402
 from . import faster_whisper as _faster_whisper  # noqa: F401, E402
 from . import whisper_cpp as _whisper_cpp  # noqa: F401, E402
 from . import kyutai_mlx as _kyutai_mlx  # noqa: F401, E402
+from . import nemo_asr as _nemo_asr  # noqa: F401, E402
 
 _load_entry_points()
