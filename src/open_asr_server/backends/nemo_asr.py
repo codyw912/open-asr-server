@@ -56,6 +56,9 @@ def _prepare_audio_path(
         if audio_path.suffix.lower() != ".wav":
             return audio_path, None
 
+    if channel_count and channel_count > 1 and not force:
+        logger.info("NeMo preflight: downmixing %s to mono WAV", audio_path)
+
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
         temp_path = Path(handle.name)
 
