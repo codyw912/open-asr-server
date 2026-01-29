@@ -75,6 +75,9 @@ a CPU-only torch dependency.
 NeMo expects mono audio; the backend uses ffmpeg to downmix or convert inputs to
 16kHz mono WAV when needed. Ensure ffmpeg is available in your environment.
 
+If you see CUDA graph capture errors from NeMo decoding, set
+`OPEN_ASR_NEMO_DISABLE_CUDA_GRAPHS=1` (default behavior disables CUDA graphs).
+
 Tip: CUDA backends are often easiest to run in Docker with the NVIDIA Container
 Toolkit; we do not ship a container image yet, but this keeps CUDA deps isolated.
 
