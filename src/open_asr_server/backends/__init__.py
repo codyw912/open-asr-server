@@ -105,6 +105,24 @@ class BackendConflictError(BackendResolutionError):
         self.candidates = candidates
 
 
+class BackendLoadError(Exception):
+    """Backend failed to load a model instance."""
+
+    def __init__(
+        self,
+        backend_id: str,
+        model: str,
+        detail: str,
+        *,
+        retryable: bool = False,
+    ):
+        super().__init__(detail)
+        self.backend_id = backend_id
+        self.model = model
+        self.detail = detail
+        self.retryable = retryable
+
+
 _backend_cache: dict[tuple[str, str], BackendCacheEntry] = {}
 _registered_backends: dict[str, RegisteredBackend] = {}
 _cache_lock = threading.Lock()

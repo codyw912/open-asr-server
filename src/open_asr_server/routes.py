@@ -14,6 +14,7 @@ from fastapi.responses import PlainTextResponse
 
 from .backends import (
     BackendConflictError,
+    BackendLoadError,
     BackendNotFoundError,
     backend_use,
     list_backend_descriptors,
@@ -276,6 +277,11 @@ async def create_transcription(
                 + ", ".join(sorted(exc.candidates))
                 + ". Use backend:model or set OPEN_ASR_DEFAULT_BACKEND."
             ),
+        )
+    except BackendLoadError as exc:
+        raise HTTPException(
+            status_code=503 if exc.retryable else 500,
+            detail=exc.detail,
         )
 
 

@@ -6,11 +6,105 @@ import logging
 import os
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from .base import TranscriptionResult
 
 logger = logging.getLogger(__name__)
+
+
+def _iter_exception_chain(exc: Exception):
+    current = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        if current.__cause__ is not None:
+            current = current.__cause__
+            continue
+        current = current.__context__
+
+
+def _exception_summary(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _is_weights_only_compat_error(exc: Exception) -> bool:
+    for candidate in _iter_exception_chain(exc):
+        message = str(candidate).lower()
+        if "weights only load failed" in message:
+            return True
+        if "weights_only" in message and "unpickl" in message:
+            return True
+    return False
+
+
+def _is_retryable_load_error(exc: Exception) -> bool:
+    for candidate in _iter_exception_chain(exc):
+        message = str(candidate).lower()
+        if any(
+            token in message
+            for token in (
+                "out of memory",
+                "cannot allocate memory",
+                "resource temporarily unavailable",
+                "device or resource busy",
+                "cuda error",
+            )
+        ):
+            return True
+    return False
+
+
+@contextmanager
+def _torch_load_with_weights_only_false():
+    try:
+        import torch  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        yield
+        return
+
+    original_load = getattr(torch, "load", None)
+    if not callable(original_load):
+        raise RuntimeError("torch.load is not callable")
+
+    def patched_load(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return original_load(*args, **kwargs)
+
+    setattr(torch, "load", patched_load)
+    try:
+        yield
+    finally:
+        setattr(torch, "load", original_load)
+
+
+def _raise_model_load_error(
+    model_id: str,
+    error: Exception,
+    *,
+    first_error: Exception | None = None,
+    fallback_attempted: bool = False,
+) -> None:
+    retryable = _is_retryable_load_error(error) or (
+        first_error is not None and _is_retryable_load_error(first_error)
+    )
+    if fallback_attempted and first_error is not None:
+        detail = (
+            f"Failed to load NeMo model '{model_id}'. "
+            "weights_only compatibility fallback also failed. "
+            f"initial={_exception_summary(first_error)}; "
+            f"fallback={_exception_summary(error)}"
+        )
+    else:
+        detail = f"Failed to load NeMo model '{model_id}': {_exception_summary(error)}"
+    raise BackendLoadError(
+        backend_id="nemo-parakeet",
+        model=model_id,
+        detail=detail,
+        retryable=retryable,
+    ) from error
 
 
 def _parse_env_bool(value: str | None, default: bool) -> bool:
@@ -28,8 +122,36 @@ def _load_nemo_model(model_id: str):
     from nemo.collections.asr.models import ASRModel  # type: ignore[import-not-found]
 
     if model_id.endswith(".nemo"):
-        return ASRModel.restore_from(model_id)
-    return ASRModel.from_pretrained(model_name=model_id)
+        try:
+            return ASRModel.restore_from(model_id)
+        except Exception as exc:
+            _raise_model_load_error(model_id, exc)
+
+    fallback_enabled = _parse_env_bool(
+        os.getenv("OPEN_ASR_NEMO_WEIGHTS_ONLY_FALLBACK"),
+        True,
+    )
+
+    try:
+        return ASRModel.from_pretrained(model_name=model_id)
+    except Exception as exc:
+        if not (fallback_enabled and _is_weights_only_compat_error(exc)):
+            _raise_model_load_error(model_id, exc)
+
+        logger.warning(
+            "NeMo load fallback: retrying %s with torch.load(weights_only=False)",
+            model_id,
+        )
+        try:
+            with _torch_load_with_weights_only_false():
+                return ASRModel.from_pretrained(model_name=model_id)
+        except Exception as fallback_exc:
+            _raise_model_load_error(
+                model_id,
+                fallback_exc,
+                first_error=exc,
+                fallback_attempted=True,
+            )
 
 
 def _disable_cuda_graphs(model) -> bool:
@@ -211,7 +333,7 @@ def _create_nemo_asr_backend(model_id: str) -> NemoASRBackend:
     return NemoASRBackend(model_id=model_id)
 
 
-from . import BackendCapabilities, BackendDescriptor, register_backend
+from . import BackendCapabilities, BackendDescriptor, BackendLoadError, register_backend
 
 NEMO_ASR_DESCRIPTOR = BackendDescriptor(
     id="nemo-parakeet",
