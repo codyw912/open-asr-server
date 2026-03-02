@@ -278,6 +278,60 @@ class RouteTests(unittest.TestCase):
         self.assertIn("conflict-b", detail)
         self.assertIn("OPEN_ASR_DEFAULT_BACKEND", detail)
 
+    def test_transcription_retryable_backend_load_error_returns_503(self):
+        def fail_factory(model_id: str):
+            raise backends.BackendLoadError(
+                backend_id="load-busy",
+                model=model_id,
+                detail="NeMo backend load failed: CUDA out of memory",
+                retryable=True,
+            )
+
+        backends.register_backend(
+            backends.BackendDescriptor(
+                id="load-busy",
+                display_name="Load Busy",
+                model_patterns=["busy-model"],
+                device_types=["cuda"],
+            ),
+            fail_factory,
+        )
+        client = self._client(ServerConfig(preload_models=[]))
+
+        files = {"file": ("audio.wav", b"test audio", "audio/wav")}
+        data = {"model": "busy-model", "response_format": "json"}
+        response = client.post("/v1/audio/transcriptions", data=data, files=files)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("CUDA out of memory", response.json()["detail"])
+
+    def test_transcription_non_retryable_backend_load_error_returns_500(self):
+        def fail_factory(model_id: str):
+            raise backends.BackendLoadError(
+                backend_id="load-failed",
+                model=model_id,
+                detail="NeMo backend load failed: unexpected config type",
+                retryable=False,
+            )
+
+        backends.register_backend(
+            backends.BackendDescriptor(
+                id="load-failed",
+                display_name="Load Failed",
+                model_patterns=["broken-model"],
+                device_types=["cuda"],
+            ),
+            fail_factory,
+        )
+        client = self._client(ServerConfig(preload_models=[]))
+
+        files = {"file": ("audio.wav", b"test audio", "audio/wav")}
+        data = {"model": "broken-model", "response_format": "json"}
+        response = client.post("/v1/audio/transcriptions", data=data, files=files)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("unexpected config type", response.json()["detail"])
+
     def test_admin_unload_model(self):
         self._register_backend("test-model")
         backends.get_backend("test-model")

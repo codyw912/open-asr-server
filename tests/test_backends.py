@@ -1,5 +1,6 @@
 import sys
 import types
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -462,6 +463,127 @@ def test_nemo_backend_restores_nemo_file(monkeypatch):
     assert calls["audio_paths"] == ["audio.wav"]
     assert result.text == "ok"
     assert result.duration == 0.5
+
+
+def test_nemo_backend_retries_known_weights_only_failure(monkeypatch):
+    calls = {"from_pretrained": 0, "fallback": 0}
+
+    class DummyModel:
+        def transcribe(self, _audio_paths):
+            return ["ok"]
+
+    class DummyASRModel:
+        @staticmethod
+        def from_pretrained(model_name):
+            calls["from_pretrained"] += 1
+            if calls["from_pretrained"] == 1:
+                raise RuntimeError("Weights only load failed for checkpoint")
+            calls["model_name"] = model_name
+            return DummyModel()
+
+        @staticmethod
+        def restore_from(_path):
+            raise AssertionError("restore_from should not be called")
+
+    @contextmanager
+    def fake_fallback_context():
+        calls["fallback"] += 1
+        yield
+
+    module = types.ModuleType("nemo.collections.asr.models")
+    setattr(module, "ASRModel", DummyASRModel)
+    monkeypatch.setitem(sys.modules, "nemo", types.ModuleType("nemo"))
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections", types.ModuleType("nemo.collections")
+    )
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections.asr", types.ModuleType("nemo.collections.asr")
+    )
+    monkeypatch.setitem(sys.modules, "nemo.collections.asr.models", module)
+    monkeypatch.setattr(
+        nemo_asr,
+        "_torch_load_with_weights_only_false",
+        fake_fallback_context,
+    )
+
+    backend = nemo_asr.NemoASRBackend("nvidia/parakeet-test")
+
+    assert backend is not None
+    assert calls["from_pretrained"] == 2
+    assert calls["fallback"] == 1
+    assert calls["model_name"] == "nvidia/parakeet-test"
+
+
+def test_nemo_backend_surfaces_fallback_failure(monkeypatch):
+    calls = {"from_pretrained": 0}
+
+    class DummyASRModel:
+        @staticmethod
+        def from_pretrained(model_name):
+            calls["from_pretrained"] += 1
+            if calls["from_pretrained"] == 1:
+                raise RuntimeError("Weights only load failed for checkpoint")
+            raise TypeError('"str" object is not callable')
+
+        @staticmethod
+        def restore_from(_path):
+            raise AssertionError("restore_from should not be called")
+
+    @contextmanager
+    def fake_fallback_context():
+        yield
+
+    module = types.ModuleType("nemo.collections.asr.models")
+    setattr(module, "ASRModel", DummyASRModel)
+    monkeypatch.setitem(sys.modules, "nemo", types.ModuleType("nemo"))
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections", types.ModuleType("nemo.collections")
+    )
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections.asr", types.ModuleType("nemo.collections.asr")
+    )
+    monkeypatch.setitem(sys.modules, "nemo.collections.asr.models", module)
+    monkeypatch.setattr(
+        nemo_asr,
+        "_torch_load_with_weights_only_false",
+        fake_fallback_context,
+    )
+
+    with pytest.raises(backends.BackendLoadError) as exc_info:
+        nemo_asr.NemoASRBackend("nvidia/parakeet-test")
+
+    assert calls["from_pretrained"] == 2
+    assert exc_info.value.retryable is False
+    assert "weights_only compatibility fallback also failed" in exc_info.value.detail
+    assert 'TypeError: "str" object is not callable' in exc_info.value.detail
+
+
+def test_nemo_backend_marks_cuda_oom_as_retryable(monkeypatch):
+    class DummyASRModel:
+        @staticmethod
+        def from_pretrained(model_name):
+            raise RuntimeError("CUDA out of memory while loading checkpoint")
+
+        @staticmethod
+        def restore_from(_path):
+            raise AssertionError("restore_from should not be called")
+
+    module = types.ModuleType("nemo.collections.asr.models")
+    setattr(module, "ASRModel", DummyASRModel)
+    monkeypatch.setitem(sys.modules, "nemo", types.ModuleType("nemo"))
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections", types.ModuleType("nemo.collections")
+    )
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections.asr", types.ModuleType("nemo.collections.asr")
+    )
+    monkeypatch.setitem(sys.modules, "nemo.collections.asr.models", module)
+
+    with pytest.raises(backends.BackendLoadError) as exc_info:
+        nemo_asr.NemoASRBackend("nvidia/parakeet-test")
+
+    assert exc_info.value.retryable is True
+    assert "CUDA out of memory" in exc_info.value.detail
 
 
 def test_nemo_prepare_audio_passthrough(tmp_path):

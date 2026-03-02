@@ -78,6 +78,11 @@ NeMo expects mono audio; the backend uses ffmpeg to downmix or convert inputs to
 If you see CUDA graph capture errors from NeMo decoding, set
 `OPEN_ASR_NEMO_DISABLE_CUDA_GRAPHS=1` (default behavior disables CUDA graphs).
 
+If NeMo fails with a `Weights only load failed` checkpoint error, the backend
+retries once with `torch.load(weights_only=False)` when
+`OPEN_ASR_NEMO_WEIGHTS_ONLY_FALLBACK=1` (enabled by default). Set this to `0`
+to disable fallback.
+
 Tip: CUDA backends are often easiest to run in Docker with the NVIDIA Container
 Toolkit; we do not ship a container image yet, but this keeps CUDA deps isolated.
 
