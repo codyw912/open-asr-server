@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 - TBD.
 
+## 0.2.1
+
+- Derive module and app version metadata from installed package metadata to prevent version drift.
+- Harden NeMo model loading by narrowing `weights_only` fallback handling and preserving root-cause details when fallback fails.
+- Return clearer load-time API errors by mapping retryable backend load failures to HTTP 503.
+
 ## 0.2.0
 
 - Add NVIDIA NeMo backend scaffold, smoke script, and docs for CUDA setup.
