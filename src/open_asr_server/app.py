@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
+from . import __version__
 from .backends import evict_idle_backends, preload_backend
 from .config import ServerConfig
 from .routes import router
@@ -66,7 +67,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     app = FastAPI(
         title="OpenAI-Compatible ASR Server",
         description="Local transcription server with OpenAI Whisper API compatibility",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 
