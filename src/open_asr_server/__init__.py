@@ -1,8 +1,19 @@
 """OpenAI-compatible ASR server for local transcription."""
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .config import ServerConfig
 
-__version__ = "0.1.0"
+
+def _resolve_version() -> str:
+    try:
+        return version("open-asr-server")
+    except PackageNotFoundError:
+        return "0.0.0"
+
+
+__version__ = _resolve_version()
+
 
 def create_app(config: ServerConfig | None = None):
     """Create the FastAPI application."""
