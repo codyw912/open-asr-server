@@ -39,8 +39,8 @@ def main() -> int:
     except ModuleNotFoundError as exc:
         if exc.name in {"lightning_whisper_mlx", "mlx"}:
             raise SystemExit(
-                "lightning-whisper-mlx is not installed. Run with Python 3.11 and the lightning-whisper extra:\n"
-                "  uv run --python 3.11 --extra lightning-whisper scripts/smoke_lightning.py"
+                "lightning-whisper-mlx is not installed. Run with Python 3.11 and the lightning-whisper-mlx extra:\n"
+                "  uv run --python 3.11 --extra lightning-whisper-mlx scripts/smoke_lightning.py"
             )
         raise
 

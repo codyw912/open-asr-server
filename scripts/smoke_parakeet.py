@@ -33,8 +33,8 @@ def main() -> int:
     except ModuleNotFoundError as exc:
         if exc.name in {"parakeet_mlx", "mlx"}:
             raise SystemExit(
-                "parakeet-mlx is not installed. Run with the parakeet extra:\n"
-                "  uv run --extra parakeet scripts/smoke_parakeet.py"
+                "parakeet-mlx is not installed. Run with the parakeet-mlx extra:\n"
+                "  uv run --extra parakeet-mlx scripts/smoke_parakeet.py"
             )
         raise
 

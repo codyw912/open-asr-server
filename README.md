@@ -13,20 +13,49 @@ Base install includes the API server and shared models/formatters:
 uv tool install "open-asr-server"
 ```
 
-Add backend extras as needed:
+### Quick start by hardware
+
+Pick one path:
 
 ```bash
-uv tool install "open-asr-server[parakeet]"         # MLX Parakeet (Apple Silicon)
-uv tool install "open-asr-server[whisper]"          # MLX Whisper
-uv tool install "open-asr-server[lightning-whisper]" # MLX Lightning Whisper
-uv tool install "open-asr-server[kyutai-mlx]"        # Kyutai STT (MLX)
-uv tool install "open-asr-server[faster-whisper]"    # CPU (CTranslate2)
-uv tool install "open-asr-server[whisper-cpp]"       # CPU (whisper.cpp)
-uv tool install "open-asr-server[nemo]"              # NVIDIA NeMo (CUDA)
+# Apple Silicon (MLX backends bundle)
+uv tool install --python 3.11 "open-asr-server[metal]"
+
+# CPU only (cross-platform bundle)
+uv tool install "open-asr-server[cpu]"
+
+# NVIDIA CUDA (NeMo backend)
+uv tool install "open-asr-server[nemo]"
+```
+
+### Backend extras (advanced)
+
+Install only the backend framework you want:
+
+```bash
+uv tool install "open-asr-server[parakeet-mlx]"
+uv tool install "open-asr-server[whisper-mlx]"
+uv tool install "open-asr-server[lightning-whisper-mlx]"
+uv tool install "open-asr-server[kyutai-mlx]"
+uv tool install "open-asr-server[faster-whisper]"
+uv tool install "open-asr-server[whisper-cpp]"
+uv tool install "open-asr-server[nemo]"
+```
+
+Bundle extras:
+- `metal`: Parakeet MLX, Whisper MLX, Lightning Whisper MLX, Kyutai MLX
+- `cpu`: faster-whisper + whisper.cpp
+- `cuda`: CUDA dependency bundle for NeMo/Torch installs
+
+Need help deciding what to run?
+
+```bash
+uv tool run open-asr-server doctor
+uv tool run open-asr-server backends
 ```
 
 Notes:
-- MLX Whisper/Lightning/Parakeet extras are currently pinned to Python 3.11.
+- Parakeet MLX, Whisper MLX, and Lightning Whisper MLX are currently pinned to Python 3.11.
 - Kyutai MLX is currently pinned to Python 3.12.
 
 ### MLX troubleshooting
@@ -34,7 +63,7 @@ Notes:
 If MLX extras fail on newer Python versions, use Python 3.11 for Parakeet/Whisper/Lightning:
 
 ```bash
-uv run --python 3.11 --extra whisper -- open-asr-server serve --host 127.0.0.1 --port 8000
+uv run --python 3.11 --extra whisper-mlx -- open-asr-server serve --host 127.0.0.1 --port 8000
 ```
 
 For Kyutai MLX, use Python 3.12:
@@ -145,7 +174,7 @@ Install at least one backend extra before running (the default model uses
 Parakeet MLX):
 
 ```bash
-uv tool install "open-asr-server[parakeet]"
+uv tool install --python 3.11 "open-asr-server[parakeet-mlx]"
 ```
 
 Then start the server:
@@ -205,9 +234,9 @@ They are derived from `tests/jfk.flac` in the OpenAI Whisper repo (MIT); the
 original JFK speech is public domain.
 
 ```bash
-uv run --extra parakeet scripts/smoke_parakeet.py samples/jfk_0_5.flac
-uv run --python 3.11 --extra whisper scripts/smoke_whisper.py samples/jfk_0_5.flac
-uv run --python 3.11 --extra lightning-whisper scripts/smoke_lightning.py samples/jfk_0_5.flac
+uv run --extra parakeet-mlx scripts/smoke_parakeet.py samples/jfk_0_5.flac
+uv run --python 3.11 --extra whisper-mlx scripts/smoke_whisper.py samples/jfk_0_5.flac
+uv run --python 3.11 --extra lightning-whisper-mlx scripts/smoke_lightning.py samples/jfk_0_5.flac
 uv run --extra whisper-cpp scripts/smoke_whisper_cpp.py samples/jfk_0_5.flac
 uv run --python 3.12 --extra kyutai-mlx scripts/smoke_kyutai_mlx.py samples/jfk_0_5.flac
 uv run --extra nemo scripts/smoke_nemo_parakeet.py samples/jfk_0_5.flac
@@ -267,10 +296,10 @@ retention concerns.
 
 ## Release
 
-```bash
-uv version --bump patch
-uv run --extra dev pytest
-uv build --no-sources
-uv publish --index testpypi --token "$UV_PUBLISH_TOKEN"
-uv publish --token "$UV_PUBLISH_TOKEN"
-```
+Follow the PR-first release flow in `CONTRIBUTING.md`.
+
+At a high level:
+
+1. Prepare release changes on a `release-x.y.z` branch.
+2. Open and merge a PR to `main`.
+3. Tag the merged commit and create a GitHub release.

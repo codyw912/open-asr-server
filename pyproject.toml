@@ -1,6 +1,6 @@
 [project]
 name = "open-asr-server"
-version = "0.2.1"
+version = "0.3.0"
 description = "OpenAI-compatible ASR server with pluggable local backends."
 readme = "README.md"
 authors = [
@@ -33,13 +33,13 @@ Repository = "https://github.com/codyw912/open-asr-server"
 Issues = "https://github.com/codyw912/open-asr-server/issues"
 
 [project.optional-dependencies]
-parakeet = [
+parakeet-mlx = [
     "parakeet-mlx; python_version < '3.12'",
 ]
-whisper = [
+whisper-mlx = [
     "mlx-whisper; python_version < '3.12'",
 ]
-lightning-whisper = [
+lightning-whisper-mlx = [
     "lightning-whisper-mlx; python_version < '3.12'",
 ]
 faster-whisper = [
@@ -52,6 +52,22 @@ kyutai-mlx = [
     "moshi-mlx; python_version >= '3.12' and python_version < '3.13'",
 ]
 nemo = [
+    "nemo_toolkit[asr]",
+    "torch",
+    "torchaudio",
+    "torchvision",
+]
+metal = [
+    "parakeet-mlx; python_version < '3.12'",
+    "mlx-whisper; python_version < '3.12'",
+    "lightning-whisper-mlx; python_version < '3.12'",
+    "moshi-mlx; python_version >= '3.12' and python_version < '3.13'",
+]
+cpu = [
+    "faster-whisper",
+    "pywhispercpp",
+]
+cuda = [
     "nemo_toolkit[asr]",
     "torch",
     "torchaudio",
@@ -83,14 +99,20 @@ explicit = true
 torch = [
     { index = "pytorch-cu121", extra = "nemo", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { index = "pytorch-cpu", extra = "nemo", marker = "sys_platform == 'darwin'" },
+    { index = "pytorch-cu121", extra = "cuda", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cpu", extra = "cuda", marker = "sys_platform == 'darwin'" },
 ]
 torchaudio = [
     { index = "pytorch-cu121", extra = "nemo", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { index = "pytorch-cpu", extra = "nemo", marker = "sys_platform == 'darwin'" },
+    { index = "pytorch-cu121", extra = "cuda", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cpu", extra = "cuda", marker = "sys_platform == 'darwin'" },
 ]
 torchvision = [
     { index = "pytorch-cu121", extra = "nemo", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { index = "pytorch-cpu", extra = "nemo", marker = "sys_platform == 'darwin'" },
+    { index = "pytorch-cu121", extra = "cuda", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cpu", extra = "cuda", marker = "sys_platform == 'darwin'" },
 ]
 
 [build-system]

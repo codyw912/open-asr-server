@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 - TBD.
 
+## 0.3.0
+
+- Breaking: rename MLX extras to explicit backend names:
+  - `parakeet` -> `parakeet-mlx`
+  - `whisper` -> `whisper-mlx`
+  - `lightning-whisper` -> `lightning-whisper-mlx`
+- Add hardware bundle extras to simplify first-run setup:
+  - `metal` (MLX backends)
+  - `cpu` (faster-whisper + whisper.cpp)
+  - `cuda` (CUDA dependency bundle for NeMo/Torch)
+- Rework install docs around hardware-first quickstart paths and update smoke commands to canonical extras.
+- Add `open-asr-server doctor` and `open-asr-server backends` commands to surface install recommendations and backend dependency status.
+
 ## 0.2.1
 
 - Derive module and app version metadata from installed package metadata to prevent version drift.

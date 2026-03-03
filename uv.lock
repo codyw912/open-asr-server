@@ -3579,7 +3579,7 @@ wheels = [
 
 [[package]]
 name = "open-asr-server"
-version = "0.2.1"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -3592,6 +3592,23 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+cpu = [
+    { name = "faster-whisper" },
+    { name = "pywhispercpp" },
+]
+cuda = [
+    { name = "nemo-toolkit", version = "2.2.1", source = { registry = "https://pypi.org/simple" }, extra = ["asr"], marker = "python_full_version == '3.12.*'" },
+    { name = "nemo-toolkit", version = "2.6.1", source = { registry = "https://pypi.org/simple" }, extra = ["asr"], marker = "python_full_version != '3.12.*'" },
+    { name = "torch", version = "2.5.1+cu121", source = { registry = "https://download.pytorch.org/whl/cu121" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torch", version = "2.9.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "torch", version = "2.10.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
+    { name = "torchaudio", version = "2.5.1+cu121", source = { registry = "https://download.pytorch.org/whl/cu121" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torchaudio", version = "2.9.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "torchaudio", version = "2.10.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
+    { name = "torchvision", version = "0.20.1+cu121", source = { registry = "https://download.pytorch.org/whl/cu121" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torchvision", version = "0.24.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "torchvision", version = "0.25.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
+]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
@@ -3603,8 +3620,14 @@ faster-whisper = [
 kyutai-mlx = [
     { name = "moshi-mlx", marker = "python_full_version == '3.12.*'" },
 ]
-lightning-whisper = [
+lightning-whisper-mlx = [
     { name = "lightning-whisper-mlx", marker = "python_full_version < '3.12'" },
+]
+metal = [
+    { name = "lightning-whisper-mlx", marker = "python_full_version < '3.12'" },
+    { name = "mlx-whisper", marker = "python_full_version < '3.12'" },
+    { name = "moshi-mlx", marker = "python_full_version == '3.12.*'" },
+    { name = "parakeet-mlx", marker = "python_full_version < '3.12'" },
 ]
 nemo = [
     { name = "nemo-toolkit", version = "2.2.1", source = { registry = "https://pypi.org/simple" }, extra = ["asr"], marker = "python_full_version == '3.12.*'" },
@@ -3619,45 +3642,61 @@ nemo = [
     { name = "torchvision", version = "0.24.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32'" },
     { name = "torchvision", version = "0.25.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
 ]
-parakeet = [
+parakeet-mlx = [
     { name = "parakeet-mlx", marker = "python_full_version < '3.12'" },
-]
-whisper = [
-    { name = "mlx-whisper", marker = "python_full_version < '3.12'" },
 ]
 whisper-cpp = [
     { name = "pywhispercpp" },
+]
+whisper-mlx = [
+    { name = "mlx-whisper", marker = "python_full_version < '3.12'" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
+    { name = "faster-whisper", marker = "extra == 'cpu'" },
     { name = "faster-whisper", marker = "extra == 'faster-whisper'" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.25" },
     { name = "huggingface-hub", specifier = ">=0.23" },
-    { name = "lightning-whisper-mlx", marker = "python_full_version < '3.12' and extra == 'lightning-whisper'" },
-    { name = "mlx-whisper", marker = "python_full_version < '3.12' and extra == 'whisper'" },
+    { name = "lightning-whisper-mlx", marker = "python_full_version < '3.12' and extra == 'lightning-whisper-mlx'" },
+    { name = "lightning-whisper-mlx", marker = "python_full_version < '3.12' and extra == 'metal'" },
+    { name = "mlx-whisper", marker = "python_full_version < '3.12' and extra == 'metal'" },
+    { name = "mlx-whisper", marker = "python_full_version < '3.12' and extra == 'whisper-mlx'" },
     { name = "moshi-mlx", marker = "python_full_version == '3.12.*' and extra == 'kyutai-mlx'" },
+    { name = "moshi-mlx", marker = "python_full_version == '3.12.*' and extra == 'metal'" },
+    { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'cuda'" },
     { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'nemo'" },
-    { name = "parakeet-mlx", marker = "python_full_version < '3.12' and extra == 'parakeet'" },
+    { name = "parakeet-mlx", marker = "python_full_version < '3.12' and extra == 'metal'" },
+    { name = "parakeet-mlx", marker = "python_full_version < '3.12' and extra == 'parakeet-mlx'" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1" },
     { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "pywhispercpp", marker = "extra == 'cpu'" },
     { name = "pywhispercpp", marker = "extra == 'whisper-cpp'" },
+    { name = "torch", marker = "sys_platform == 'darwin' and extra == 'cuda'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "open-asr-server", extra = "cuda" } },
     { name = "torch", marker = "sys_platform == 'darwin' and extra == 'nemo'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "open-asr-server", extra = "nemo" } },
+    { name = "torch", marker = "sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'cuda'" },
     { name = "torch", marker = "sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'nemo'" },
+    { name = "torch", marker = "(sys_platform == 'linux' and extra == 'cuda') or (sys_platform == 'win32' and extra == 'cuda')", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "open-asr-server", extra = "cuda" } },
     { name = "torch", marker = "(sys_platform == 'linux' and extra == 'nemo') or (sys_platform == 'win32' and extra == 'nemo')", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "open-asr-server", extra = "nemo" } },
+    { name = "torchaudio", marker = "sys_platform == 'darwin' and extra == 'cuda'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "open-asr-server", extra = "cuda" } },
     { name = "torchaudio", marker = "sys_platform == 'darwin' and extra == 'nemo'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "open-asr-server", extra = "nemo" } },
+    { name = "torchaudio", marker = "sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'cuda'" },
     { name = "torchaudio", marker = "sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'nemo'" },
+    { name = "torchaudio", marker = "(sys_platform == 'linux' and extra == 'cuda') or (sys_platform == 'win32' and extra == 'cuda')", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "open-asr-server", extra = "cuda" } },
     { name = "torchaudio", marker = "(sys_platform == 'linux' and extra == 'nemo') or (sys_platform == 'win32' and extra == 'nemo')", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "open-asr-server", extra = "nemo" } },
+    { name = "torchvision", marker = "sys_platform == 'darwin' and extra == 'cuda'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "open-asr-server", extra = "cuda" } },
     { name = "torchvision", marker = "sys_platform == 'darwin' and extra == 'nemo'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "open-asr-server", extra = "nemo" } },
+    { name = "torchvision", marker = "sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'cuda'" },
     { name = "torchvision", marker = "sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'nemo'" },
+    { name = "torchvision", marker = "(sys_platform == 'linux' and extra == 'cuda') or (sys_platform == 'win32' and extra == 'cuda')", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "open-asr-server", extra = "cuda" } },
     { name = "torchvision", marker = "(sys_platform == 'linux' and extra == 'nemo') or (sys_platform == 'win32' and extra == 'nemo')", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "open-asr-server", extra = "nemo" } },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.29" },
 ]
-provides-extras = ["parakeet", "whisper", "lightning-whisper", "faster-whisper", "whisper-cpp", "kyutai-mlx", "nemo", "dev"]
+provides-extras = ["parakeet-mlx", "whisper-mlx", "lightning-whisper-mlx", "faster-whisper", "whisper-cpp", "kyutai-mlx", "nemo", "metal", "cpu", "cuda", "dev"]
 
 [[package]]
 name = "optuna"
