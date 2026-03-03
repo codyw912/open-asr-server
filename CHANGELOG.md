@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
   - `cuda` (CUDA dependency bundle for NeMo/Torch)
 - Rework install docs around hardware-first quickstart paths and update smoke commands to canonical extras.
 - Add `open-asr-server doctor` and `open-asr-server backends` commands to surface install recommendations and backend dependency status.
+- Emit structured backend load errors with explicit codes (`weights_only_incompat`, `model_load_oom`, `backend_busy`) and retryable flags for gateway handling.
 
 ## 0.2.1
 

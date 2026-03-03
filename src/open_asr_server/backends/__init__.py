@@ -114,13 +114,54 @@ class BackendLoadError(Exception):
         model: str,
         detail: str,
         *,
+        code: str = "backend_load_failed",
         retryable: bool = False,
     ):
         super().__init__(detail)
         self.backend_id = backend_id
         self.model = model
         self.detail = detail
+        self.code = code
         self.retryable = retryable
+
+
+class WeightsOnlyIncompatLoadError(BackendLoadError):
+    """Load failed due to PyTorch weights_only incompatibility."""
+
+    def __init__(self, backend_id: str, model: str, detail: str):
+        super().__init__(
+            backend_id=backend_id,
+            model=model,
+            detail=detail,
+            code="weights_only_incompat",
+            retryable=False,
+        )
+
+
+class ModelLoadOOMError(BackendLoadError):
+    """Load failed due to memory pressure (OOM)."""
+
+    def __init__(self, backend_id: str, model: str, detail: str):
+        super().__init__(
+            backend_id=backend_id,
+            model=model,
+            detail=detail,
+            code="model_load_oom",
+            retryable=True,
+        )
+
+
+class BackendBusyLoadError(BackendLoadError):
+    """Load failed because backend resources are temporarily busy."""
+
+    def __init__(self, backend_id: str, model: str, detail: str):
+        super().__init__(
+            backend_id=backend_id,
+            model=model,
+            detail=detail,
+            code="backend_busy",
+            retryable=True,
+        )
 
 
 _backend_cache: dict[tuple[str, str], BackendCacheEntry] = {}

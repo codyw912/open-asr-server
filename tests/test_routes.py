@@ -2,14 +2,9 @@ import time
 import unittest
 
 try:
-    from fastapi.testclient import TestClient
-except Exception:
-    TestClient = None
-
-if TestClient is None:
-    raise unittest.SkipTest("fastapi not installed")
-
-from fastapi.testclient import TestClient as FastAPITestClient
+    from fastapi.testclient import TestClient as FastAPITestClient
+except Exception as exc:
+    raise unittest.SkipTest("fastapi not installed") from exc
 
 import open_asr_server.backends as backends
 from open_asr_server.app import create_app
@@ -280,11 +275,10 @@ class RouteTests(unittest.TestCase):
 
     def test_transcription_retryable_backend_load_error_returns_503(self):
         def fail_factory(model_id: str):
-            raise backends.BackendLoadError(
+            raise backends.ModelLoadOOMError(
                 backend_id="load-busy",
                 model=model_id,
                 detail="NeMo backend load failed: CUDA out of memory",
-                retryable=True,
             )
 
         backends.register_backend(
@@ -303,15 +297,47 @@ class RouteTests(unittest.TestCase):
         response = client.post("/v1/audio/transcriptions", data=data, files=files)
 
         self.assertEqual(response.status_code, 503)
-        self.assertIn("CUDA out of memory", response.json()["detail"])
+        detail = response.json()["detail"]
+        self.assertEqual(detail["type"], "backend_load_error")
+        self.assertEqual(detail["code"], "model_load_oom")
+        self.assertEqual(detail["retryable"], True)
+        self.assertIn("CUDA out of memory", detail["message"])
+        self.assertEqual(detail["backend"], "load-busy")
+
+    def test_transcription_backend_busy_error_returns_503(self):
+        def fail_factory(model_id: str):
+            raise backends.BackendBusyLoadError(
+                backend_id="load-busy",
+                model=model_id,
+                detail="NeMo backend load failed: resources are busy",
+            )
+
+        backends.register_backend(
+            backends.BackendDescriptor(
+                id="load-busy",
+                display_name="Load Busy",
+                model_patterns=["busy-model"],
+                device_types=["cuda"],
+            ),
+            fail_factory,
+        )
+        client = self._client(ServerConfig(preload_models=[]))
+
+        files = {"file": ("audio.wav", b"test audio", "audio/wav")}
+        data = {"model": "busy-model", "response_format": "json"}
+        response = client.post("/v1/audio/transcriptions", data=data, files=files)
+
+        self.assertEqual(response.status_code, 503)
+        detail = response.json()["detail"]
+        self.assertEqual(detail["code"], "backend_busy")
+        self.assertEqual(detail["retryable"], True)
 
     def test_transcription_non_retryable_backend_load_error_returns_500(self):
         def fail_factory(model_id: str):
-            raise backends.BackendLoadError(
+            raise backends.WeightsOnlyIncompatLoadError(
                 backend_id="load-failed",
                 model=model_id,
                 detail="NeMo backend load failed: unexpected config type",
-                retryable=False,
             )
 
         backends.register_backend(
@@ -330,7 +356,11 @@ class RouteTests(unittest.TestCase):
         response = client.post("/v1/audio/transcriptions", data=data, files=files)
 
         self.assertEqual(response.status_code, 500)
-        self.assertIn("unexpected config type", response.json()["detail"])
+        detail = response.json()["detail"]
+        self.assertEqual(detail["type"], "backend_load_error")
+        self.assertEqual(detail["code"], "weights_only_incompat")
+        self.assertEqual(detail["retryable"], False)
+        self.assertIn("unexpected config type", detail["message"])
 
     def test_admin_unload_model(self):
         self._register_backend("test-model")
