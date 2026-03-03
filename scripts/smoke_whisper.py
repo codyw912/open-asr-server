@@ -33,8 +33,8 @@ def main() -> int:
     except ModuleNotFoundError as exc:
         if exc.name in {"mlx_whisper", "mlx"}:
             raise SystemExit(
-                "mlx-whisper is not installed. Run with Python 3.11 and the whisper extra:\n"
-                "  uv run --python 3.11 --extra whisper scripts/smoke_whisper.py"
+                "mlx-whisper is not installed. Run with Python 3.11 and the whisper-mlx extra:\n"
+                "  uv run --python 3.11 --extra whisper-mlx scripts/smoke_whisper.py"
             )
         raise
 
