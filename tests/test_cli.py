@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import types
@@ -70,6 +71,9 @@ def test_backends_lists_install_hints(monkeypatch):
             device_types=["metal"],
             model_patterns=["parakeet-*"],
             install_extra="parakeet-mlx",
+            install_bundle="metal",
+            install_python="3.11",
+            install_command='uv tool install --python 3.11 "open-asr-server[parakeet-mlx]"',
             missing_distributions=[],
         ),
         cli.BackendInstallStatus(
@@ -78,6 +82,9 @@ def test_backends_lists_install_hints(monkeypatch):
             device_types=["cuda"],
             model_patterns=["nvidia/parakeet*"],
             install_extra="nemo",
+            install_bundle="cuda",
+            install_python=None,
+            install_command='uv tool install "open-asr-server[nemo]"',
             missing_distributions=["nemo_toolkit", "torch"],
         ),
     ]
@@ -88,13 +95,57 @@ def test_backends_lists_install_hints(monkeypatch):
     assert result.exit_code == 0
     assert "Registered backends:" in result.output
     assert "parakeet-mlx (Parakeet MLX) [metal] - ready" in result.output
-    assert 'install: uv tool install "open-asr-server[parakeet-mlx]"' in result.output
+    assert (
+        'install: uv tool install --python 3.11 "open-asr-server[parakeet-mlx]"'
+        in result.output
+    )
+    assert "bundle: metal" in result.output
     assert "nemo-parakeet (NeMo Parakeet) [cuda] - missing deps" in result.output
     assert "missing: nemo_toolkit, torch" in result.output
 
 
+def test_backends_json_output(monkeypatch):
+    statuses = [
+        cli.BackendInstallStatus(
+            backend_id="faster-whisper",
+            display_name="Faster Whisper",
+            device_types=["cpu"],
+            model_patterns=["openai/whisper-*"],
+            install_extra="faster-whisper",
+            install_bundle="cpu",
+            install_python=None,
+            install_command='uv tool install "open-asr-server[faster-whisper]"',
+            missing_distributions=[],
+        )
+    ]
+    monkeypatch.setattr(cli, "_collect_backend_statuses", lambda: statuses)
+
+    result = runner.invoke(cli.app, ["backends", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert len(payload["data"]) == 1
+    entry = payload["data"][0]
+    assert entry["backend"] == "faster-whisper"
+    assert entry["available"] is True
+    assert entry["install_bundle"] == "cpu"
+
+
 def test_doctor_recommends_metal_on_apple_silicon(monkeypatch):
-    monkeypatch.setattr(cli, "_collect_backend_statuses", lambda: [])
+    statuses = [
+        cli.BackendInstallStatus(
+            backend_id="whisper-mlx",
+            display_name="Whisper MLX",
+            device_types=["metal"],
+            model_patterns=["whisper-large-v3-turbo"],
+            install_extra="whisper-mlx",
+            install_bundle="metal",
+            install_python="3.11",
+            install_command='uv tool install --python 3.11 "open-asr-server[whisper-mlx]"',
+            missing_distributions=["mlx-whisper"],
+        )
+    ]
+    monkeypatch.setattr(cli, "_collect_backend_statuses", lambda: statuses)
     monkeypatch.setattr(cli, "_detect_nvidia_gpu", lambda: (False, "none"))
     monkeypatch.setattr(cli.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(cli.platform, "machine", lambda: "arm64")
@@ -106,3 +157,37 @@ def test_doctor_recommends_metal_on_apple_silicon(monkeypatch):
     assert "Recommended quickstart:" in result.output
     assert "--python 3.11" in result.output
     assert "open-asr-server[metal]" in result.output
+    assert "Backend status:" in result.output
+
+
+def test_doctor_json_output(monkeypatch):
+    statuses = [
+        cli.BackendInstallStatus(
+            backend_id="nemo-parakeet",
+            display_name="NeMo Parakeet",
+            device_types=["cuda"],
+            model_patterns=["nvidia/parakeet*"],
+            install_extra="nemo",
+            install_bundle="cuda",
+            install_python=None,
+            install_command='uv tool install "open-asr-server[nemo]"',
+            missing_distributions=[],
+        )
+    ]
+    monkeypatch.setattr(cli, "_collect_backend_statuses", lambda: statuses)
+    monkeypatch.setattr(cli, "_detect_nvidia_gpu", lambda: (True, "torch"))
+    monkeypatch.setattr(cli.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(cli.platform, "machine", lambda: "x86_64")
+
+    result = runner.invoke(cli.app, ["doctor", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["environment"]["platform"] == "linux"
+    assert payload["environment"]["nvidia_gpu"] is True
+    assert payload["recommendation"]["extra"] == "nemo"
+    assert (
+        payload["recommendation"]["install_command"]
+        == 'uv tool install "open-asr-server[nemo]"'
+    )
+    assert payload["backends"][0]["backend"] == "nemo-parakeet"

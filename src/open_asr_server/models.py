@@ -94,6 +94,10 @@ class ModelMetadataEntry(BaseModel):
     capabilities: ModelCapabilitiesResponse | None = None
     notes: str | None = None
     source: Literal["model-card", "heuristic", "default", "unknown"] | None = None
+    install_extra: str | None = None
+    install_bundle: str | None = None
+    install_python: str | None = None
+    install_command: str | None = None
 
 
 class ModelMetadataListResponse(BaseModel):

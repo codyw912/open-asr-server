@@ -221,6 +221,25 @@ class RouteTests(unittest.TestCase):
         self.assertTrue(pattern_entry["capabilities"]["supports_prompt"])
         self.assertEqual(loaded_entry["device_types"], ["cpu"])
 
+    def test_models_metadata_includes_install_hints_for_known_backend(self):
+        client = self._client(ServerConfig(preload_models=[]))
+
+        response = client.get("/v1/models/metadata")
+
+        self.assertEqual(response.status_code, 200)
+        data = {entry["id"]: entry for entry in response.json()["data"]}
+        self.assertIn("parakeet-*", data)
+        parakeet = data["parakeet-*"]
+        self.assertEqual(parakeet["install_extra"], "parakeet-mlx")
+        self.assertEqual(parakeet["install_bundle"], "metal")
+        self.assertEqual(parakeet["install_python"], "3.11")
+        self.assertIn("open-asr-server[parakeet-mlx]", parakeet["install_command"])
+
+        self.assertIn("nvidia/parakeet*", data)
+        nemo = data["nvidia/parakeet*"]
+        self.assertEqual(nemo["install_extra"], "nemo")
+        self.assertEqual(nemo["install_bundle"], "cuda")
+
     def test_models_metadata_allowlist_accepts_prefixed_ids(self):
         descriptor = backends.BackendDescriptor(
             id="test-meta-allow",

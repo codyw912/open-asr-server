@@ -52,6 +52,10 @@ Need help deciding what to run?
 ```bash
 uv tool run open-asr-server doctor
 uv tool run open-asr-server backends
+
+# Machine-readable output
+uv tool run open-asr-server doctor --json
+uv tool run open-asr-server backends --json
 ```
 
 Notes:
@@ -284,6 +288,10 @@ Load-time backend failures return structured `detail` payloads with retry hints:
 ```
 
 Current load error codes include `weights_only_incompat`, `model_load_oom`, and `backend_busy`.
+
+`/v1/models/metadata` includes install hints for known backends (`install_extra`,
+`install_bundle`, `install_python`, `install_command`) so automation can guide
+setup without hardcoded backend mappings.
 
 Example:
 
