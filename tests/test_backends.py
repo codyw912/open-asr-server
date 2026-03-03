@@ -554,6 +554,7 @@ def test_nemo_backend_surfaces_fallback_failure(monkeypatch):
 
     assert calls["from_pretrained"] == 2
     assert exc_info.value.retryable is False
+    assert exc_info.value.code == "weights_only_incompat"
     assert "weights_only compatibility fallback also failed" in exc_info.value.detail
     assert 'TypeError: "str" object is not callable' in exc_info.value.detail
 
@@ -583,7 +584,64 @@ def test_nemo_backend_marks_cuda_oom_as_retryable(monkeypatch):
         nemo_asr.NemoASRBackend("nvidia/parakeet-test")
 
     assert exc_info.value.retryable is True
+    assert exc_info.value.code == "model_load_oom"
     assert "CUDA out of memory" in exc_info.value.detail
+
+
+def test_nemo_backend_marks_busy_load_as_retryable(monkeypatch):
+    class DummyASRModel:
+        @staticmethod
+        def from_pretrained(model_name):
+            raise RuntimeError("CUDA error: all CUDA-capable devices are busy")
+
+        @staticmethod
+        def restore_from(_path):
+            raise AssertionError("restore_from should not be called")
+
+    module = types.ModuleType("nemo.collections.asr.models")
+    setattr(module, "ASRModel", DummyASRModel)
+    monkeypatch.setitem(sys.modules, "nemo", types.ModuleType("nemo"))
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections", types.ModuleType("nemo.collections")
+    )
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections.asr", types.ModuleType("nemo.collections.asr")
+    )
+    monkeypatch.setitem(sys.modules, "nemo.collections.asr.models", module)
+
+    with pytest.raises(backends.BackendLoadError) as exc_info:
+        nemo_asr.NemoASRBackend("nvidia/parakeet-test")
+
+    assert exc_info.value.retryable is True
+    assert exc_info.value.code == "backend_busy"
+
+
+def test_nemo_backend_marks_unknown_error_as_non_retryable(monkeypatch):
+    class DummyASRModel:
+        @staticmethod
+        def from_pretrained(model_name):
+            raise TypeError('"str" object is not callable')
+
+        @staticmethod
+        def restore_from(_path):
+            raise AssertionError("restore_from should not be called")
+
+    module = types.ModuleType("nemo.collections.asr.models")
+    setattr(module, "ASRModel", DummyASRModel)
+    monkeypatch.setitem(sys.modules, "nemo", types.ModuleType("nemo"))
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections", types.ModuleType("nemo.collections")
+    )
+    monkeypatch.setitem(
+        sys.modules, "nemo.collections.asr", types.ModuleType("nemo.collections.asr")
+    )
+    monkeypatch.setitem(sys.modules, "nemo.collections.asr.models", module)
+
+    with pytest.raises(backends.BackendLoadError) as exc_info:
+        nemo_asr.NemoASRBackend("nvidia/parakeet-test")
+
+    assert exc_info.value.retryable is False
+    assert exc_info.value.code == "backend_load_failed"
 
 
 def test_nemo_prepare_audio_passthrough(tmp_path):

@@ -9,6 +9,12 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
+from . import (
+    BackendBusyLoadError,
+    BackendLoadError,
+    ModelLoadOOMError,
+    WeightsOnlyIncompatLoadError,
+)
 from .base import TranscriptionResult
 
 logger = logging.getLogger(__name__)
@@ -40,7 +46,7 @@ def _is_weights_only_compat_error(exc: Exception) -> bool:
     return False
 
 
-def _is_retryable_load_error(exc: Exception) -> bool:
+def _is_oom_load_error(exc: Exception) -> bool:
     for candidate in _iter_exception_chain(exc):
         message = str(candidate).lower()
         if any(
@@ -48,9 +54,25 @@ def _is_retryable_load_error(exc: Exception) -> bool:
             for token in (
                 "out of memory",
                 "cannot allocate memory",
+                "cudnn_status_alloc_failed",
+                "cuda out of memory",
+            )
+        ):
+            return True
+    return False
+
+
+def _is_backend_busy_error(exc: Exception) -> bool:
+    for candidate in _iter_exception_chain(exc):
+        message = str(candidate).lower()
+        if any(
+            token in message
+            for token in (
                 "resource temporarily unavailable",
                 "device or resource busy",
-                "cuda error",
+                "devices are busy or unavailable",
+                "cuda error: all cuda-capable devices are busy",
+                "cuda driver error: busy",
             )
         ):
             return True
@@ -80,6 +102,42 @@ def _torch_load_with_weights_only_false():
         setattr(torch, "load", original_load)
 
 
+def _has_weights_only_incompat(
+    error: Exception,
+    *,
+    first_error: Exception | None = None,
+    fallback_attempted: bool = False,
+) -> bool:
+    if _is_weights_only_compat_error(error):
+        return True
+    if fallback_attempted and first_error is not None:
+        return _is_weights_only_compat_error(first_error)
+    return False
+
+
+def _load_error_type(
+    error: Exception,
+    *,
+    first_error: Exception | None = None,
+    fallback_attempted: bool = False,
+) -> type[BackendLoadError]:
+    checks = [error]
+    if first_error is not None:
+        checks.append(first_error)
+
+    if any(_is_backend_busy_error(candidate) for candidate in checks):
+        return BackendBusyLoadError
+    if any(_is_oom_load_error(candidate) for candidate in checks):
+        return ModelLoadOOMError
+    if _has_weights_only_incompat(
+        error,
+        first_error=first_error,
+        fallback_attempted=fallback_attempted,
+    ):
+        return WeightsOnlyIncompatLoadError
+    return BackendLoadError
+
+
 def _raise_model_load_error(
     model_id: str,
     error: Exception,
@@ -87,8 +145,10 @@ def _raise_model_load_error(
     first_error: Exception | None = None,
     fallback_attempted: bool = False,
 ) -> None:
-    retryable = _is_retryable_load_error(error) or (
-        first_error is not None and _is_retryable_load_error(first_error)
+    error_type = _load_error_type(
+        error,
+        first_error=first_error,
+        fallback_attempted=fallback_attempted,
     )
     if fallback_attempted and first_error is not None:
         detail = (
@@ -99,11 +159,17 @@ def _raise_model_load_error(
         )
     else:
         detail = f"Failed to load NeMo model '{model_id}': {_exception_summary(error)}"
-    raise BackendLoadError(
+    if error_type is BackendLoadError:
+        raise BackendLoadError(
+            backend_id="nemo-parakeet",
+            model=model_id,
+            detail=detail,
+            retryable=False,
+        ) from error
+    raise error_type(
         backend_id="nemo-parakeet",
         model=model_id,
         detail=detail,
-        retryable=retryable,
     ) from error
 
 
@@ -333,7 +399,7 @@ def _create_nemo_asr_backend(model_id: str) -> NemoASRBackend:
     return NemoASRBackend(model_id=model_id)
 
 
-from . import BackendCapabilities, BackendDescriptor, BackendLoadError, register_backend
+from . import BackendCapabilities, BackendDescriptor, register_backend
 
 NEMO_ASR_DESCRIPTOR = BackendDescriptor(
     id="nemo-parakeet",

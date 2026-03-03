@@ -268,6 +268,23 @@ The server implements:
 - `GET /v1/models`
 - `GET /v1/models/metadata`
 
+Load-time backend failures return structured `detail` payloads with retry hints:
+
+```json
+{
+  "detail": {
+    "type": "backend_load_error",
+    "code": "model_load_oom",
+    "message": "Failed to load ...",
+    "backend": "nemo-parakeet",
+    "model": "nvidia/parakeet-tdt-0.6b-v3",
+    "retryable": true
+  }
+}
+```
+
+Current load error codes include `weights_only_incompat`, `model_load_oom`, and `backend_busy`.
+
 Example:
 
 ```bash

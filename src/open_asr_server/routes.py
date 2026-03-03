@@ -7,7 +7,7 @@ import inspect
 import secrets
 import tempfile
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
@@ -100,7 +100,7 @@ def _ensure_rate_limit(request: Request, api_key: str | None) -> None:
 
 def _descriptor_to_metadata(descriptor, model_id: str) -> ModelMetadataEntry:
     metadata = descriptor.metadata or {}
-    entry = {
+    entry: dict[str, Any] = {
         "id": model_id,
         "backend": descriptor.id,
         "device_types": descriptor.device_types,
@@ -125,6 +125,17 @@ def _descriptor_to_metadata(descriptor, model_id: str) -> ModelMetadataEntry:
             entry[key] = metadata[key]
 
     return ModelMetadataEntry(**entry)
+
+
+def _backend_load_error_detail(exc: BackendLoadError) -> dict[str, Any]:
+    return {
+        "type": "backend_load_error",
+        "code": exc.code,
+        "message": exc.detail,
+        "backend": exc.backend_id,
+        "model": exc.model,
+        "retryable": exc.retryable,
+    }
 
 
 async def _run_transcription(
@@ -281,7 +292,7 @@ async def create_transcription(
     except BackendLoadError as exc:
         raise HTTPException(
             status_code=503 if exc.retryable else 500,
-            detail=exc.detail,
+            detail=_backend_load_error_detail(exc),
         )
 
 
