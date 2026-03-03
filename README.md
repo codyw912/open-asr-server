@@ -47,6 +47,13 @@ Bundle extras:
 - `cpu`: faster-whisper + whisper.cpp
 - `cuda`: CUDA dependency bundle for NeMo/Torch installs
 
+Need help deciding what to run?
+
+```bash
+uv tool run open-asr-server doctor
+uv tool run open-asr-server backends
+```
+
 Notes:
 - Parakeet MLX, Whisper MLX, and Lightning Whisper MLX are currently pinned to Python 3.11.
 - Kyutai MLX is currently pinned to Python 3.12.

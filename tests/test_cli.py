@@ -21,7 +21,7 @@ def test_serve_passes_args(monkeypatch):
         calls["factory"] = factory
 
     uvicorn_module = types.ModuleType("uvicorn")
-    uvicorn_module.run = run
+    setattr(uvicorn_module, "run", run)
     monkeypatch.setitem(sys.modules, "uvicorn", uvicorn_module)
     monkeypatch.delenv("OPEN_ASR_SERVER_PRELOAD", raising=False)
 
@@ -48,7 +48,7 @@ def test_serve_sets_preload_env(monkeypatch):
         calls["called"] = True
 
     uvicorn_module = types.ModuleType("uvicorn")
-    uvicorn_module.run = run
+    setattr(uvicorn_module, "run", run)
     monkeypatch.setitem(sys.modules, "uvicorn", uvicorn_module)
     monkeypatch.delenv("OPEN_ASR_SERVER_PRELOAD", raising=False)
 
@@ -60,3 +60,49 @@ def test_serve_sets_preload_env(monkeypatch):
     assert result.exit_code == 0
     assert calls["called"] is True
     assert os.environ["OPEN_ASR_SERVER_PRELOAD"] == "model-a,model-b"
+
+
+def test_backends_lists_install_hints(monkeypatch):
+    statuses = [
+        cli.BackendInstallStatus(
+            backend_id="parakeet-mlx",
+            display_name="Parakeet MLX",
+            device_types=["metal"],
+            model_patterns=["parakeet-*"],
+            install_extra="parakeet-mlx",
+            missing_distributions=[],
+        ),
+        cli.BackendInstallStatus(
+            backend_id="nemo-parakeet",
+            display_name="NeMo Parakeet",
+            device_types=["cuda"],
+            model_patterns=["nvidia/parakeet*"],
+            install_extra="nemo",
+            missing_distributions=["nemo_toolkit", "torch"],
+        ),
+    ]
+    monkeypatch.setattr(cli, "_collect_backend_statuses", lambda: statuses)
+
+    result = runner.invoke(cli.app, ["backends"])
+
+    assert result.exit_code == 0
+    assert "Registered backends:" in result.output
+    assert "parakeet-mlx (Parakeet MLX) [metal] - ready" in result.output
+    assert 'install: uv tool install "open-asr-server[parakeet-mlx]"' in result.output
+    assert "nemo-parakeet (NeMo Parakeet) [cuda] - missing deps" in result.output
+    assert "missing: nemo_toolkit, torch" in result.output
+
+
+def test_doctor_recommends_metal_on_apple_silicon(monkeypatch):
+    monkeypatch.setattr(cli, "_collect_backend_statuses", lambda: [])
+    monkeypatch.setattr(cli, "_detect_nvidia_gpu", lambda: (False, "none"))
+    monkeypatch.setattr(cli.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(cli.platform, "machine", lambda: "arm64")
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "Environment:" in result.output
+    assert "Recommended quickstart:" in result.output
+    assert "--python 3.11" in result.output
+    assert "open-asr-server[metal]" in result.output
