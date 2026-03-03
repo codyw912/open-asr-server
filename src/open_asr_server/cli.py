@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from importlib import metadata
+import json
 import os
 import platform
 import re
@@ -11,6 +12,8 @@ import sys
 from typing import Annotated, Optional
 
 import typer
+
+from .install_hints import backend_install_hint, install_command
 
 app = typer.Typer(
     name="open-asr-server",
@@ -25,6 +28,9 @@ class BackendInstallStatus:
     device_types: list[str]
     model_patterns: list[str]
     install_extra: str | None
+    install_bundle: str | None
+    install_python: str | None
+    install_command: str | None
     missing_distributions: list[str]
 
     @property
@@ -36,17 +42,6 @@ class BackendInstallStatus:
 class QuickstartRecommendation:
     extra: str
     python: str | None = None
-
-
-_BACKEND_EXTRA_HINTS = {
-    "parakeet-mlx": "parakeet-mlx",
-    "whisper-mlx": "whisper-mlx",
-    "lightning-whisper-mlx": "lightning-whisper-mlx",
-    "kyutai-mlx": "kyutai-mlx",
-    "faster-whisper": "faster-whisper",
-    "whisper-cpp": "whisper-cpp",
-    "nemo-parakeet": "nemo",
-}
 
 
 def _normalize_requirement_name(requirement: str) -> str:
@@ -78,6 +73,7 @@ def _collect_backend_statuses() -> list[BackendInstallStatus]:
 
     statuses: list[BackendInstallStatus] = []
     for descriptor in sorted(list_backend_descriptors(), key=lambda item: item.id):
+        hint = backend_install_hint(descriptor.id)
         missing = [
             _normalize_requirement_name(requirement)
             for requirement in descriptor.optional_dependencies
@@ -89,7 +85,12 @@ def _collect_backend_statuses() -> list[BackendInstallStatus]:
                 display_name=descriptor.display_name,
                 device_types=descriptor.device_types,
                 model_patterns=descriptor.model_patterns,
-                install_extra=_BACKEND_EXTRA_HINTS.get(descriptor.id),
+                install_extra=hint.extra if hint else None,
+                install_bundle=hint.bundle if hint else None,
+                install_python=hint.python if hint else None,
+                install_command=(
+                    install_command(hint.extra, python=hint.python) if hint else None
+                ),
                 missing_distributions=missing,
             )
         )
@@ -137,13 +138,51 @@ def _recommend_quickstart_extra() -> QuickstartRecommendation:
     return QuickstartRecommendation(extra="cpu")
 
 
-def _format_install_command(recommendation: QuickstartRecommendation) -> str:
-    if recommendation.python:
-        return (
-            f"uv tool install --python {recommendation.python} "
-            f'"open-asr-server[{recommendation.extra}]"'
-        )
-    return f'uv tool install "open-asr-server[{recommendation.extra}]"'
+def _format_quickstart_install_command(recommendation: QuickstartRecommendation) -> str:
+    return install_command(recommendation.extra, python=recommendation.python)
+
+
+def _backend_status_payload(status: BackendInstallStatus) -> dict:
+    return {
+        "backend": status.backend_id,
+        "display_name": status.display_name,
+        "device_types": status.device_types,
+        "model_patterns": status.model_patterns,
+        "available": status.available,
+        "missing_distributions": status.missing_distributions,
+        "install_extra": status.install_extra,
+        "install_bundle": status.install_bundle,
+        "install_python": status.install_python,
+        "install_command": status.install_command,
+    }
+
+
+def _doctor_payload(
+    *,
+    has_nvidia: bool,
+    gpu_source: str,
+    recommendation: QuickstartRecommendation,
+    statuses: list[BackendInstallStatus],
+) -> dict:
+    python_version = (
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    )
+    return {
+        "environment": {
+            "platform": platform.system().lower(),
+            "machine": platform.machine().lower(),
+            "python": python_version,
+            "nvidia_gpu": has_nvidia,
+            "nvidia_gpu_source": gpu_source,
+        },
+        "recommendation": {
+            "extra": recommendation.extra,
+            "python": recommendation.python,
+            "install_command": _format_quickstart_install_command(recommendation),
+            "run_command": "uv tool run open-asr-server serve --host 127.0.0.1 --port 8000",
+        },
+        "backends": [_backend_status_payload(status) for status in statuses],
+    }
 
 
 def _render_backend_statuses(statuses: list[BackendInstallStatus]) -> None:
@@ -153,10 +192,10 @@ def _render_backend_statuses(statuses: list[BackendInstallStatus]) -> None:
             f"- {status.backend_id} ({status.display_name}) [{', '.join(status.device_types)}] - {state_label}"
         )
         typer.echo(f"  models: {', '.join(status.model_patterns)}")
-        if status.install_extra:
-            typer.echo(
-                f'  install: uv tool install "open-asr-server[{status.install_extra}]"'
-            )
+        if status.install_command:
+            typer.echo(f"  install: {status.install_command}")
+        if status.install_bundle:
+            typer.echo(f"  bundle: {status.install_bundle}")
         if status.missing_distributions:
             typer.echo(f"  missing: {', '.join(status.missing_distributions)}")
 
@@ -196,22 +235,60 @@ def serve(
 
 
 @app.command("backends")
-def list_backends_command():
+def list_backends_command(
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output machine-readable JSON",
+        ),
+    ] = False,
+):
     """Show backend availability, model patterns, and install hints."""
     statuses = _collect_backend_statuses()
     if not statuses:
-        typer.echo("No backends are registered.")
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {"error": "No backends are registered.", "data": []},
+                )
+            )
+        else:
+            typer.echo("No backends are registered.")
         raise typer.Exit(code=1)
+
+    if json_output:
+        typer.echo(json.dumps({"data": [_backend_status_payload(s) for s in statuses]}))
+        return
 
     typer.echo("Registered backends:")
     _render_backend_statuses(statuses)
 
 
 @app.command()
-def doctor():
+def doctor(
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output machine-readable JSON",
+        ),
+    ] = False,
+):
     """Inspect local environment and print recommended install/run commands."""
     has_nvidia, gpu_source = _detect_nvidia_gpu()
     recommendation = _recommend_quickstart_extra()
+    statuses = _collect_backend_statuses()
+    payload = _doctor_payload(
+        has_nvidia=has_nvidia,
+        gpu_source=gpu_source,
+        recommendation=recommendation,
+        statuses=statuses,
+    )
+
+    if json_output:
+        typer.echo(json.dumps(payload))
+        return
 
     typer.echo("Environment:")
     typer.echo(f"- platform: {platform.system().lower()} {platform.machine().lower()}")
@@ -225,10 +302,9 @@ def doctor():
 
     typer.echo("")
     typer.echo("Recommended quickstart:")
-    typer.echo(f"- install: {_format_install_command(recommendation)}")
+    typer.echo(f"- install: {_format_quickstart_install_command(recommendation)}")
     typer.echo("- run: uv tool run open-asr-server serve --host 127.0.0.1 --port 8000")
 
-    statuses = _collect_backend_statuses()
     if statuses:
         typer.echo("")
         typer.echo("Backend status:")

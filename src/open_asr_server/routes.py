@@ -27,6 +27,7 @@ from .backends import (
 )
 from .config import ServerConfig
 from .formatters import to_json, to_srt, to_text, to_verbose_json, to_vtt
+from .install_hints import backend_install_hint, install_command
 from .models import (
     ModelCapabilitiesResponse,
     ModelInfo,
@@ -105,6 +106,12 @@ def _descriptor_to_metadata(descriptor, model_id: str) -> ModelMetadataEntry:
         "backend": descriptor.id,
         "device_types": descriptor.device_types,
     }
+    hint = backend_install_hint(descriptor.id)
+    if hint:
+        entry["install_extra"] = hint.extra
+        entry["install_bundle"] = hint.bundle
+        entry["install_python"] = hint.python
+        entry["install_command"] = install_command(hint.extra, python=hint.python)
     if descriptor.capabilities:
         entry["capabilities"] = ModelCapabilitiesResponse(
             **descriptor.capabilities.model_dump(exclude_none=True)
@@ -120,6 +127,10 @@ def _descriptor_to_metadata(descriptor, model_id: str) -> ModelMetadataEntry:
         "min_vram_mb",
         "notes",
         "source",
+        "install_extra",
+        "install_bundle",
+        "install_python",
+        "install_command",
     ):
         if key in metadata:
             entry[key] = metadata[key]
