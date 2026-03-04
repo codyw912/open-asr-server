@@ -7,13 +7,13 @@ Thanks for considering a contribution to Open ASR Server.
 1. Install dependencies:
 
 ```bash
-uv sync --extra dev
+uv sync --frozen --extra dev
 ```
 
 2. Run tests:
 
 ```bash
-uv run --extra dev pytest
+uv run --frozen --extra dev pytest
 ```
 
 ## Testing
@@ -21,8 +21,15 @@ uv run --extra dev pytest
 - Run coverage locally:
 
 ```bash
-uv run --extra dev pytest --cov=open_asr_server --cov-report=term
+uv run --frozen --extra dev pytest --cov=open_asr_server --cov-report=term
 ```
+
+CI checks on PRs and `main` include:
+
+- `uv lock --check`
+- Python test matrix (3.11-3.14)
+- package build (`uv build --no-sources`)
+- coverage artifact generation
 
 - Keep tests hermetic by avoiding reliance on local env vars, caches, or model downloads.
 
@@ -30,7 +37,7 @@ uv run --extra dev pytest --cov=open_asr_server --cov-report=term
 
 - Keep changes focused and include a clear description.
 - Add or update tests when behavior changes.
-- Ensure `uv run --extra dev pytest` passes before submitting.
+- Ensure `uv run --frozen --extra dev pytest` passes before submitting.
 
 ## Releases
 
@@ -44,7 +51,7 @@ Use a PR-first release flow. Do not push release commits directly to `main`.
 3. Run validation before opening the PR:
 
 ```bash
-uv run --extra dev pytest
+uv run --frozen --extra dev pytest
 ```
 
 4. Open a PR to `main` and wait for required checks/review.
