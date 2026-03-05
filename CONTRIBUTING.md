@@ -28,6 +28,7 @@ CI checks on PRs and `main` include:
 
 - `uv lock --check`
 - Python test matrix (3.11-3.14)
+- backend profile smoke checks (`cpu`, `nemo`) with dependency import validation
 - package build (`uv build --no-sources`)
 - coverage artifact generation
 
