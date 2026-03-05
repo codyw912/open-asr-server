@@ -54,6 +54,40 @@ jobs:
       - name: Run tests
         run: uv run --frozen --extra dev pytest
 
+  backend-smoke:
+    needs: lockfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - name: cpu
+            extra: cpu
+            dependency_tests: tests/backend_imports_cpu.py
+            backend_kexpr: "faster_whisper or whisper_cpp"
+          - name: nemo
+            extra: nemo
+            dependency_tests: tests/backend_imports_nemo.py
+            backend_kexpr: "nemo_"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync dependencies (${{ matrix.profile.name }})
+        run: uv sync --frozen --extra dev --extra ${{ matrix.profile.extra }}
+      - name: Run dependency smoke tests (${{ matrix.profile.name }})
+        run: uv run --frozen --extra dev --extra ${{ matrix.profile.extra }} pytest ${{ matrix.profile.dependency_tests }}
+      - name: Run backend unit tests (${{ matrix.profile.name }})
+        run: uv run --frozen --extra dev --extra ${{ matrix.profile.extra }} pytest tests/test_backends.py -k "${{ matrix.profile.backend_kexpr }}"
+
   build:
     needs: lockfile
     runs-on: ubuntu-latest
