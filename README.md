@@ -53,9 +53,15 @@ Need help deciding what to run?
 uv tool run open-asr-server doctor
 uv tool run open-asr-server backends
 
+# Auto-setup (no manual --python needed)
+uv tool run open-asr-server setup --apply
+uv tool run open-asr-server setup metal --apply
+uv tool run open-asr-server setup nemo-parakeet --apply
+
 # Machine-readable output
 uv tool run open-asr-server doctor --json
 uv tool run open-asr-server backends --json
+uv tool run open-asr-server setup --json
 ```
 
 Notes:
@@ -68,6 +74,12 @@ If MLX extras fail on newer Python versions, use Python 3.11 for Parakeet/Whispe
 
 ```bash
 uv run --python 3.11 --extra whisper-mlx -- open-asr-server serve --host 127.0.0.1 --port 8000
+```
+
+Or let the CLI choose the right Python automatically:
+
+```bash
+uv tool run open-asr-server setup metal --apply
 ```
 
 For Kyutai MLX, use Python 3.12:

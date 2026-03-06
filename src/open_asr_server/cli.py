@@ -13,7 +13,18 @@ from typing import Annotated, Optional
 
 import typer
 
-from .install_hints import backend_install_hint, install_command
+from .install_hints import (
+    backend_install_hint,
+    bundle_install_hint,
+    install_command,
+    install_command_args,
+    install_command_args_for_extras,
+    install_command_for_extras,
+    known_backends,
+    known_bundles,
+    known_extras,
+    recommended_python_for_extra,
+)
 
 app = typer.Typer(
     name="open-asr-server",
@@ -42,6 +53,27 @@ class BackendInstallStatus:
 class QuickstartRecommendation:
     extra: str
     python: str | None = None
+
+
+@dataclass(frozen=True)
+class SetupPlan:
+    requested_targets: list[str]
+    resolved_extras: list[str]
+    resolved_python: str | None
+
+    @property
+    def install_command(self) -> str:
+        return install_command_for_extras(
+            self.resolved_extras,
+            python=self.resolved_python,
+        )
+
+    @property
+    def install_command_args(self) -> list[str]:
+        return install_command_args_for_extras(
+            self.resolved_extras,
+            python=self.resolved_python,
+        )
 
 
 def _normalize_requirement_name(requirement: str) -> str:
@@ -138,6 +170,87 @@ def _recommend_quickstart_extra() -> QuickstartRecommendation:
     return QuickstartRecommendation(extra="cpu")
 
 
+def _available_setup_targets() -> list[str]:
+    targets = {"auto"}
+    targets.update(known_bundles())
+    targets.update(known_extras())
+    targets.update(known_backends())
+    return sorted(targets)
+
+
+def _resolve_setup_plan(targets: list[str] | None) -> SetupPlan:
+    normalized_targets = [
+        item.strip().lower() for item in (targets or ["auto"]) if item.strip()
+    ]
+    if not normalized_targets:
+        normalized_targets = ["auto"]
+
+    if "auto" in normalized_targets and len(normalized_targets) > 1:
+        raise typer.BadParameter(
+            "Target 'auto' cannot be combined with other targets.",
+            param_hint="targets",
+        )
+
+    resolved_extras: set[str] = set()
+    resolved_pythons: set[str] = set()
+
+    for target in normalized_targets:
+        if target == "auto":
+            recommendation = _recommend_quickstart_extra()
+            resolved_extras.add(recommendation.extra)
+            if recommendation.python:
+                resolved_pythons.add(recommendation.python)
+            continue
+
+        bundle_hint = bundle_install_hint(target)
+        if bundle_hint:
+            resolved_extras.add(bundle_hint.extra)
+            if bundle_hint.python:
+                resolved_pythons.add(bundle_hint.python)
+            continue
+
+        backend_hint = backend_install_hint(target)
+        if backend_hint:
+            resolved_extras.add(backend_hint.extra)
+            if backend_hint.python:
+                resolved_pythons.add(backend_hint.python)
+            continue
+
+        if target in known_extras():
+            resolved_extras.add(target)
+            python = recommended_python_for_extra(target)
+            if python:
+                resolved_pythons.add(python)
+            continue
+
+        choices = ", ".join(_available_setup_targets())
+        raise typer.BadParameter(
+            f"Unknown setup target '{target}'. Valid targets: {choices}",
+            param_hint="targets",
+        )
+
+    if len(resolved_pythons) > 1:
+        conflict = ", ".join(sorted(resolved_pythons))
+        raise typer.BadParameter(
+            "Conflicting recommended Python versions for selected targets: "
+            + conflict
+            + ". Use separate environments per backend family.",
+            param_hint="targets",
+        )
+
+    resolved_python = next(iter(resolved_pythons), None)
+
+    return SetupPlan(
+        requested_targets=normalized_targets,
+        resolved_extras=sorted(resolved_extras),
+        resolved_python=resolved_python,
+    )
+
+
+def _setup_apply_command(plan: SetupPlan) -> list[str]:
+    return plan.install_command_args
+
+
 def _format_quickstart_install_command(recommendation: QuickstartRecommendation) -> str:
     return install_command(recommendation.extra, python=recommendation.python)
 
@@ -154,6 +267,7 @@ def _backend_status_payload(status: BackendInstallStatus) -> dict:
         "install_bundle": status.install_bundle,
         "install_python": status.install_python,
         "install_command": status.install_command,
+        "setup_command": f"open-asr-server setup {status.backend_id} --apply",
     }
 
 
@@ -179,6 +293,7 @@ def _doctor_payload(
             "extra": recommendation.extra,
             "python": recommendation.python,
             "install_command": _format_quickstart_install_command(recommendation),
+            "setup_command": "open-asr-server setup --apply",
             "run_command": "uv tool run open-asr-server serve --host 127.0.0.1 --port 8000",
         },
         "backends": [_backend_status_payload(status) for status in statuses],
@@ -194,6 +309,7 @@ def _render_backend_statuses(statuses: list[BackendInstallStatus]) -> None:
         typer.echo(f"  models: {', '.join(status.model_patterns)}")
         if status.install_command:
             typer.echo(f"  install: {status.install_command}")
+            typer.echo(f"  setup: open-asr-server setup {status.backend_id} --apply")
         if status.install_bundle:
             typer.echo(f"  bundle: {status.install_bundle}")
         if status.missing_distributions:
@@ -232,6 +348,76 @@ def serve(
         reload=reload,
         factory=True,
     )
+
+
+@app.command()
+def setup(
+    targets: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help=(
+                "Setup target: auto, bundle (metal/cpu/cuda), backend id "
+                "(for example nemo-parakeet), or extra name"
+            )
+        ),
+    ] = None,
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Execute the install command automatically",
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output machine-readable JSON",
+        ),
+    ] = False,
+):
+    """Generate or run a friction-free backend setup command."""
+    plan = _resolve_setup_plan(targets)
+    payload = {
+        "requested_targets": plan.requested_targets,
+        "resolved_extras": plan.resolved_extras,
+        "resolved_python": plan.resolved_python,
+        "install_command": plan.install_command,
+    }
+
+    if json_output and not apply:
+        typer.echo(json.dumps(payload))
+        return
+
+    if not apply:
+        apply_args = ""
+        if plan.requested_targets != ["auto"]:
+            apply_args = " " + " ".join(plan.requested_targets)
+        typer.echo("Setup plan:")
+        typer.echo(f"- targets: {', '.join(plan.requested_targets)}")
+        typer.echo(f"- extras: {', '.join(plan.resolved_extras)}")
+        if plan.resolved_python:
+            typer.echo(f"- python: {plan.resolved_python}")
+        typer.echo(f"- install: {plan.install_command}")
+        typer.echo(f"- run: open-asr-server setup{apply_args} --apply")
+        return
+
+    if shutil.which("uv") is None:
+        if json_output:
+            payload["error"] = "uv not found in PATH"
+            typer.echo(json.dumps(payload))
+        else:
+            typer.echo(
+                "Error: uv not found in PATH. Install uv first: https://docs.astral.sh/uv/"
+            )
+        raise typer.Exit(code=1)
+
+    result = subprocess.run(_setup_apply_command(plan), check=False)
+    if json_output:
+        payload["returncode"] = result.returncode
+        typer.echo(json.dumps(payload))
+    if result.returncode != 0:
+        raise typer.Exit(code=result.returncode)
 
 
 @app.command("backends")
@@ -303,6 +489,7 @@ def doctor(
     typer.echo("")
     typer.echo("Recommended quickstart:")
     typer.echo(f"- install: {_format_quickstart_install_command(recommendation)}")
+    typer.echo("- setup: open-asr-server setup --apply")
     typer.echo("- run: uv tool run open-asr-server serve --host 127.0.0.1 --port 8000")
 
     if statuses:

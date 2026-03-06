@@ -157,6 +157,7 @@ def test_doctor_recommends_metal_on_apple_silicon(monkeypatch):
     assert "Recommended quickstart:" in result.output
     assert "--python 3.11" in result.output
     assert "open-asr-server[metal]" in result.output
+    assert "open-asr-server setup --apply" in result.output
     assert "Backend status:" in result.output
 
 
@@ -190,4 +191,82 @@ def test_doctor_json_output(monkeypatch):
         payload["recommendation"]["install_command"]
         == 'uv tool install "open-asr-server[nemo]"'
     )
+    assert payload["recommendation"]["setup_command"] == "open-asr-server setup --apply"
     assert payload["backends"][0]["backend"] == "nemo-parakeet"
+
+
+def test_setup_auto_prints_plan(monkeypatch):
+    monkeypatch.setattr(
+        cli,
+        "_recommend_quickstart_extra",
+        lambda: cli.QuickstartRecommendation(extra="metal", python="3.11"),
+    )
+
+    result = runner.invoke(cli.app, ["setup"])
+
+    assert result.exit_code == 0
+    assert "targets: auto" in result.output
+    assert 'uv tool install --python 3.11 "open-asr-server[metal]"' in result.output
+    assert "open-asr-server setup --apply" in result.output
+
+
+def test_setup_target_backend_prints_targeted_apply_command():
+    result = runner.invoke(cli.app, ["setup", "nemo-parakeet"])
+
+    assert result.exit_code == 0
+    assert "targets: nemo-parakeet" in result.output
+    assert 'uv tool install "open-asr-server[nemo]"' in result.output
+    assert "open-asr-server setup nemo-parakeet --apply" in result.output
+
+
+def test_setup_multi_target_combines_extras_and_python():
+    result = runner.invoke(cli.app, ["setup", "metal", "cpu"])
+
+    assert result.exit_code == 0
+    assert "targets: metal, cpu" in result.output
+    assert "extras: cpu, metal" in result.output
+    assert 'uv tool install --python 3.11 "open-asr-server[cpu,metal]"' in result.output
+    assert "open-asr-server setup metal cpu --apply" in result.output
+
+
+def test_setup_rejects_conflicting_python_targets():
+    result = runner.invoke(cli.app, ["setup", "metal", "kyutai-mlx"])
+
+    assert result.exit_code == 2
+    assert "Conflicting recommended Python versions" in result.output
+
+
+def test_setup_apply_executes_uv_install(monkeypatch):
+    calls = {}
+
+    def fake_run(command, check=False):
+        calls["command"] = command
+        calls["check"] = check
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/bin/uv")
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    result = runner.invoke(cli.app, ["setup", "metal", "--apply"])
+
+    assert result.exit_code == 0
+    assert calls["check"] is False
+    assert calls["command"] == [
+        "uv",
+        "tool",
+        "install",
+        "--python",
+        "3.11",
+        "open-asr-server[metal]",
+    ]
+
+
+def test_setup_apply_without_uv_returns_error(monkeypatch):
+    monkeypatch.setattr(cli.shutil, "which", lambda _: None)
+
+    result = runner.invoke(cli.app, ["setup", "cpu", "--apply", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["resolved_extras"] == ["cpu"]
+    assert payload["error"] == "uv not found in PATH"
