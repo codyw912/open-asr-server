@@ -15,6 +15,7 @@ import typer
 
 from .install_hints import (
     backend_install_hint,
+    backend_runtime_status,
     bundle_install_hint,
     install_command,
     install_command_args,
@@ -43,10 +44,16 @@ class BackendInstallStatus:
     install_python: str | None
     install_command: str | None
     missing_distributions: list[str]
+    compatibility_status: str = "ready"
+    compatibility_reason: str | None = None
+    supported_platforms: list[str] | None = None
+    supported_python: list[str] | None = None
+    requires_nvidia: bool = False
+    compatibility_notes: str | None = None
 
     @property
     def available(self) -> bool:
-        return not self.missing_distributions
+        return self.compatibility_status == "ready" and not self.missing_distributions
 
 
 @dataclass(frozen=True)
@@ -103,9 +110,32 @@ def _distribution_installed(requirement: str) -> bool:
 def _collect_backend_statuses() -> list[BackendInstallStatus]:
     from .backends import list_backend_descriptors
 
+    platform_name = platform.system().lower()
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    has_nvidia, _gpu_source = _detect_nvidia_gpu()
+
     statuses: list[BackendInstallStatus] = []
     for descriptor in sorted(list_backend_descriptors(), key=lambda item: item.id):
         hint = backend_install_hint(descriptor.id)
+        compatibility_status = "ready"
+        compatibility_reason = None
+        supported_platforms = None
+        supported_python = None
+        requires_nvidia = False
+        compatibility_notes = None
+        if hint:
+            compatibility_status, compatibility_reason = backend_runtime_status(
+                descriptor.id,
+                platform_name=platform_name,
+                python_version=python_version,
+                has_nvidia=has_nvidia,
+            )
+            if hint.compatibility.supported_platforms:
+                supported_platforms = list(hint.compatibility.supported_platforms)
+            if hint.compatibility.supported_python:
+                supported_python = list(hint.compatibility.supported_python)
+            requires_nvidia = hint.compatibility.requires_nvidia
+            compatibility_notes = hint.compatibility.notes
         missing = [
             _normalize_requirement_name(requirement)
             for requirement in descriptor.optional_dependencies
@@ -123,6 +153,12 @@ def _collect_backend_statuses() -> list[BackendInstallStatus]:
                 install_command=(
                     install_command(hint.extra, python=hint.python) if hint else None
                 ),
+                compatibility_status=compatibility_status,
+                compatibility_reason=compatibility_reason,
+                supported_platforms=supported_platforms,
+                supported_python=supported_python,
+                requires_nvidia=requires_nvidia,
+                compatibility_notes=compatibility_notes,
                 missing_distributions=missing,
             )
         )
@@ -161,13 +197,25 @@ def _recommend_quickstart_extra() -> QuickstartRecommendation:
     machine = platform.machine().lower()
 
     if system == "darwin" and machine in {"arm64", "aarch64"}:
-        return QuickstartRecommendation(extra="metal", python="3.11")
+        hint = bundle_install_hint("metal")
+        return QuickstartRecommendation(
+            extra="metal",
+            python=hint.python if hint else "3.11",
+        )
 
     has_nvidia, _source = _detect_nvidia_gpu()
     if has_nvidia and system in {"linux", "windows"}:
-        return QuickstartRecommendation(extra="nemo")
+        hint = backend_install_hint("nemo-parakeet")
+        return QuickstartRecommendation(
+            extra="nemo",
+            python=hint.python if hint else None,
+        )
 
-    return QuickstartRecommendation(extra="cpu")
+    hint = bundle_install_hint("cpu")
+    return QuickstartRecommendation(
+        extra="cpu",
+        python=hint.python if hint else None,
+    )
 
 
 def _available_setup_targets() -> list[str]:
@@ -262,11 +310,21 @@ def _backend_status_payload(status: BackendInstallStatus) -> dict:
         "device_types": status.device_types,
         "model_patterns": status.model_patterns,
         "available": status.available,
+        "status": (
+            status.compatibility_status
+            if status.compatibility_status != "ready"
+            else ("missing_deps" if status.missing_distributions else "ready")
+        ),
+        "status_reason": status.compatibility_reason,
         "missing_distributions": status.missing_distributions,
         "install_extra": status.install_extra,
         "install_bundle": status.install_bundle,
         "install_python": status.install_python,
         "install_command": status.install_command,
+        "supported_platforms": status.supported_platforms,
+        "supported_python": status.supported_python,
+        "requires_nvidia": status.requires_nvidia,
+        "compatibility_notes": status.compatibility_notes,
         "setup_command": f"open-asr-server setup {status.backend_id} --apply",
     }
 
@@ -302,11 +360,20 @@ def _doctor_payload(
 
 def _render_backend_statuses(statuses: list[BackendInstallStatus]) -> None:
     for status in statuses:
-        state_label = "ready" if status.available else "missing deps"
+        if status.compatibility_status != "ready":
+            state_label = status.compatibility_status.replace("_", " ")
+        elif status.missing_distributions:
+            state_label = "missing deps"
+        else:
+            state_label = "ready"
         typer.echo(
             f"- {status.backend_id} ({status.display_name}) [{', '.join(status.device_types)}] - {state_label}"
         )
         typer.echo(f"  models: {', '.join(status.model_patterns)}")
+        if status.compatibility_reason:
+            typer.echo(f"  compatibility: {status.compatibility_reason}")
+        if status.compatibility_notes:
+            typer.echo(f"  notes: {status.compatibility_notes}")
         if status.install_command:
             typer.echo(f"  install: {status.install_command}")
             typer.echo(f"  setup: open-asr-server setup {status.backend_id} --apply")

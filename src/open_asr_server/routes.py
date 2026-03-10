@@ -112,6 +112,12 @@ def _descriptor_to_metadata(descriptor, model_id: str) -> ModelMetadataEntry:
         entry["install_bundle"] = hint.bundle
         entry["install_python"] = hint.python
         entry["install_command"] = install_command(hint.extra, python=hint.python)
+        if hint.compatibility.supported_platforms:
+            entry["supported_platforms"] = list(hint.compatibility.supported_platforms)
+        if hint.compatibility.supported_python:
+            entry["supported_python"] = list(hint.compatibility.supported_python)
+        entry["requires_nvidia"] = hint.compatibility.requires_nvidia
+        entry["compatibility_notes"] = hint.compatibility.notes
     if descriptor.capabilities:
         entry["capabilities"] = ModelCapabilitiesResponse(
             **descriptor.capabilities.model_dump(exclude_none=True)
@@ -131,6 +137,10 @@ def _descriptor_to_metadata(descriptor, model_id: str) -> ModelMetadataEntry:
         "install_bundle",
         "install_python",
         "install_command",
+        "supported_platforms",
+        "supported_python",
+        "requires_nvidia",
+        "compatibility_notes",
     ):
         if key in metadata:
             entry[key] = metadata[key]

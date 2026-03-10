@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- TBD.
+- Add backend compatibility metadata (platform, Python, GPU requirements) to install hints and `/v1/models/metadata` output.
+- Improve CLI compatibility UX with richer backend status classification (`ready`, `missing_deps`, `python_incompatible`, `platform_incompatible`, `requires_gpu`).
+- Extend `setup`/`doctor` flows to auto-pin known-good Python versions for CPU and CUDA stacks.
+- Unify uv index configuration in `pyproject.toml` and remove `uv.toml` to eliminate ambiguous index warnings.
 
 ## 0.3.0
 

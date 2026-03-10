@@ -57,6 +57,7 @@ uv tool run open-asr-server backends
 uv tool run open-asr-server setup --apply
 uv tool run open-asr-server setup metal --apply
 uv tool run open-asr-server setup nemo-parakeet --apply
+uv tool run open-asr-server setup metal cpu --apply
 
 # Machine-readable output
 uv tool run open-asr-server doctor --json
@@ -65,6 +66,8 @@ uv tool run open-asr-server setup --json
 ```
 
 Notes:
+- `setup` auto-pins known-good Python versions for backend stacks (`metal`, `cpu`, `cuda`).
+- `backends` reports compatibility status (`ready`, `missing_deps`, `python_incompatible`, `platform_incompatible`, `requires_gpu`).
 - Parakeet MLX, Whisper MLX, and Lightning Whisper MLX are currently pinned to Python 3.11.
 - Kyutai MLX is currently pinned to Python 3.12.
 
