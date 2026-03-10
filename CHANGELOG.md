@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - Emit structured backend load errors with explicit codes (`weights_only_incompat`, `model_load_oom`, `backend_busy`) and retryable flags for gateway handling.
 - Add install hints in `/v1/models/metadata` (`install_extra`, `install_bundle`, `install_python`, `install_command`) for automation.
 - Harden CI with lockfile/build gates and add backend profile smoke jobs (`cpu`, `nemo`) for dependency/import validation.
+- Add deterministic live-HTTP integration tests and a dedicated CI integration lane.
 
 ## 0.2.1
 

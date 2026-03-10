@@ -16,6 +16,12 @@ uv sync --frozen --extra dev
 uv run --frozen --extra dev pytest
 ```
 
+3. Run integration tests:
+
+```bash
+uv run --frozen --extra dev pytest -m integration tests/integration
+```
+
 ## Testing
 
 - Run coverage locally:
@@ -28,6 +34,7 @@ CI checks on PRs and `main` include:
 
 - `uv lock --check`
 - Python test matrix (3.11-3.14)
+- dedicated integration test lane (`pytest -m integration tests/integration`)
 - backend profile smoke checks (`cpu`, `nemo`) with dependency import validation
 - package build (`uv build --no-sources`)
 - coverage artifact generation
