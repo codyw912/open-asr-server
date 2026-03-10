@@ -98,6 +98,10 @@ class ModelMetadataEntry(BaseModel):
     install_bundle: str | None = None
     install_python: str | None = None
     install_command: str | None = None
+    supported_platforms: list[str] | None = None
+    supported_python: list[str] | None = None
+    requires_nvidia: bool | None = None
+    compatibility_notes: str | None = None
 
 
 class ModelMetadataListResponse(BaseModel):

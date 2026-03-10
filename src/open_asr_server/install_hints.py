@@ -2,7 +2,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Literal
+
+RuntimeStatus = Literal[
+    "ready",
+    "platform_incompatible",
+    "python_incompatible",
+    "requires_gpu",
+]
+
+
+@dataclass(frozen=True)
+class RuntimeCompatibility:
+    supported_platforms: tuple[str, ...] | None = None
+    supported_python: tuple[str, ...] | None = None
+    requires_nvidia: bool = False
+    notes: str | None = None
 
 
 @dataclass(frozen=True)
@@ -10,12 +26,41 @@ class BackendInstallHint:
     extra: str
     bundle: str | None = None
     python: str | None = None
+    compatibility: RuntimeCompatibility = field(default_factory=RuntimeCompatibility)
 
 
 @dataclass(frozen=True)
 class BundleInstallHint:
     extra: str
     python: str | None = None
+    compatibility: RuntimeCompatibility = field(default_factory=RuntimeCompatibility)
+
+
+_ALL_PLATFORMS = ("darwin", "linux", "windows")
+
+_MLX_311 = RuntimeCompatibility(
+    supported_platforms=("darwin",),
+    supported_python=("3.11",),
+    notes="Apple Silicon (Metal/MLX)",
+)
+
+_MLX_312 = RuntimeCompatibility(
+    supported_platforms=("darwin",),
+    supported_python=("3.12",),
+    notes="Apple Silicon (Metal/MLX)",
+)
+
+_CPU_311_PLUS = RuntimeCompatibility(
+    supported_platforms=_ALL_PLATFORMS,
+    supported_python=("3.11", "3.12", "3.13"),
+)
+
+_CUDA_311 = RuntimeCompatibility(
+    supported_platforms=("linux", "windows"),
+    supported_python=("3.11",),
+    requires_nvidia=True,
+    notes="NVIDIA CUDA host required",
+)
 
 
 _BACKEND_INSTALL_HINTS = {
@@ -23,31 +68,66 @@ _BACKEND_INSTALL_HINTS = {
         extra="parakeet-mlx",
         bundle="metal",
         python="3.11",
+        compatibility=_MLX_311,
     ),
     "whisper-mlx": BackendInstallHint(
         extra="whisper-mlx",
         bundle="metal",
         python="3.11",
+        compatibility=_MLX_311,
     ),
     "lightning-whisper-mlx": BackendInstallHint(
         extra="lightning-whisper-mlx",
         bundle="metal",
         python="3.11",
+        compatibility=_MLX_311,
     ),
     "kyutai-mlx": BackendInstallHint(
         extra="kyutai-mlx",
         bundle="metal",
         python="3.12",
+        compatibility=_MLX_312,
     ),
-    "faster-whisper": BackendInstallHint(extra="faster-whisper", bundle="cpu"),
-    "whisper-cpp": BackendInstallHint(extra="whisper-cpp", bundle="cpu"),
-    "nemo-parakeet": BackendInstallHint(extra="nemo", bundle="cuda"),
+    "faster-whisper": BackendInstallHint(
+        extra="faster-whisper",
+        bundle="cpu",
+        python="3.11",
+        compatibility=_CPU_311_PLUS,
+    ),
+    "whisper-cpp": BackendInstallHint(
+        extra="whisper-cpp",
+        bundle="cpu",
+        python="3.11",
+        compatibility=_CPU_311_PLUS,
+    ),
+    "nemo-parakeet": BackendInstallHint(
+        extra="nemo",
+        bundle="cuda",
+        python="3.11",
+        compatibility=_CUDA_311,
+    ),
 }
 
 _BUNDLE_INSTALL_HINTS = {
-    "metal": BundleInstallHint(extra="metal", python="3.11"),
-    "cpu": BundleInstallHint(extra="cpu"),
-    "cuda": BundleInstallHint(extra="cuda"),
+    "metal": BundleInstallHint(
+        extra="metal",
+        python="3.11",
+        compatibility=RuntimeCompatibility(
+            supported_platforms=("darwin",),
+            supported_python=("3.11", "3.12"),
+            notes="Use 3.11 for Parakeet/Whisper/Lightning; 3.12 for Kyutai",
+        ),
+    ),
+    "cpu": BundleInstallHint(
+        extra="cpu",
+        python="3.11",
+        compatibility=_CPU_311_PLUS,
+    ),
+    "cuda": BundleInstallHint(
+        extra="cuda",
+        python="3.11",
+        compatibility=_CUDA_311,
+    ),
 }
 
 
@@ -81,6 +161,54 @@ def recommended_python_for_extra(extra: str) -> str | None:
         if hint.extra == extra and hint.python is not None:
             return hint.python
     return None
+
+
+def runtime_status(
+    compatibility: RuntimeCompatibility,
+    *,
+    platform_name: str,
+    python_version: str,
+    has_nvidia: bool,
+) -> tuple[RuntimeStatus, str | None]:
+    normalized_platform = platform_name.strip().lower()
+
+    if compatibility.supported_platforms:
+        supported_platforms = {
+            value.lower() for value in compatibility.supported_platforms
+        }
+        if normalized_platform not in supported_platforms:
+            options = ", ".join(sorted(supported_platforms))
+            return "platform_incompatible", f"supported platforms: {options}"
+
+    if (
+        compatibility.supported_python
+        and python_version not in compatibility.supported_python
+    ):
+        options = ", ".join(compatibility.supported_python)
+        return "python_incompatible", f"supported python: {options}"
+
+    if compatibility.requires_nvidia and not has_nvidia:
+        return "requires_gpu", "requires NVIDIA GPU"
+
+    return "ready", None
+
+
+def backend_runtime_status(
+    backend_id: str,
+    *,
+    platform_name: str,
+    python_version: str,
+    has_nvidia: bool,
+) -> tuple[RuntimeStatus, str | None]:
+    hint = backend_install_hint(backend_id)
+    if not hint:
+        return "ready", None
+    return runtime_status(
+        hint.compatibility,
+        platform_name=platform_name,
+        python_version=python_version,
+        has_nvidia=has_nvidia,
+    )
 
 
 def install_command(extra: str, *, python: str | None = None) -> str:

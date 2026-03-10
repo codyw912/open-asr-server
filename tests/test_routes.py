@@ -234,11 +234,17 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(parakeet["install_bundle"], "metal")
         self.assertEqual(parakeet["install_python"], "3.11")
         self.assertIn("open-asr-server[parakeet-mlx]", parakeet["install_command"])
+        self.assertEqual(parakeet["supported_platforms"], ["darwin"])
+        self.assertEqual(parakeet["supported_python"], ["3.11"])
+        self.assertEqual(parakeet["requires_nvidia"], False)
 
         self.assertIn("nvidia/parakeet*", data)
         nemo = data["nvidia/parakeet*"]
         self.assertEqual(nemo["install_extra"], "nemo")
         self.assertEqual(nemo["install_bundle"], "cuda")
+        self.assertEqual(nemo["supported_platforms"], ["linux", "windows"])
+        self.assertEqual(nemo["supported_python"], ["3.11"])
+        self.assertEqual(nemo["requires_nvidia"], True)
 
     def test_models_metadata_allowlist_accepts_prefixed_ids(self):
         descriptor = backends.BackendDescriptor(

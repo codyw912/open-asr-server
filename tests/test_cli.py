@@ -129,6 +129,32 @@ def test_backends_json_output(monkeypatch):
     assert entry["backend"] == "faster-whisper"
     assert entry["available"] is True
     assert entry["install_bundle"] == "cpu"
+    assert entry["status"] == "ready"
+
+
+def test_backends_reports_python_incompatible_status(monkeypatch):
+    statuses = [
+        cli.BackendInstallStatus(
+            backend_id="faster-whisper",
+            display_name="Faster Whisper",
+            device_types=["cpu"],
+            model_patterns=["openai/whisper-*"],
+            install_extra="faster-whisper",
+            install_bundle="cpu",
+            install_python="3.11",
+            install_command='uv tool install --python 3.11 "open-asr-server[faster-whisper]"',
+            missing_distributions=[],
+            compatibility_status="python_incompatible",
+            compatibility_reason="supported python: 3.11, 3.12, 3.13",
+        )
+    ]
+    monkeypatch.setattr(cli, "_collect_backend_statuses", lambda: statuses)
+
+    result = runner.invoke(cli.app, ["backends"])
+
+    assert result.exit_code == 0
+    assert "python incompatible" in result.output
+    assert "compatibility: supported python: 3.11, 3.12, 3.13" in result.output
 
 
 def test_doctor_recommends_metal_on_apple_silicon(monkeypatch):
@@ -189,7 +215,7 @@ def test_doctor_json_output(monkeypatch):
     assert payload["recommendation"]["extra"] == "nemo"
     assert (
         payload["recommendation"]["install_command"]
-        == 'uv tool install "open-asr-server[nemo]"'
+        == 'uv tool install --python 3.11 "open-asr-server[nemo]"'
     )
     assert payload["recommendation"]["setup_command"] == "open-asr-server setup --apply"
     assert payload["backends"][0]["backend"] == "nemo-parakeet"
@@ -215,7 +241,7 @@ def test_setup_target_backend_prints_targeted_apply_command():
 
     assert result.exit_code == 0
     assert "targets: nemo-parakeet" in result.output
-    assert 'uv tool install "open-asr-server[nemo]"' in result.output
+    assert 'uv tool install --python 3.11 "open-asr-server[nemo]"' in result.output
     assert "open-asr-server setup nemo-parakeet --apply" in result.output
 
 
