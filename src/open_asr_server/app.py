@@ -3,14 +3,129 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, suppress
+import fnmatch
+import logging
+import platform
+import sys
 
 from fastapi import FastAPI
 
 from . import __version__
-from .backends import evict_idle_backends, preload_backend
+from .backends import evict_idle_backends, list_backend_descriptors, preload_backend
 from .config import ServerConfig
+from .install_hints import (
+    backend_install_hint,
+    backend_runtime_status,
+    detect_nvidia_gpu,
+    install_command,
+)
 from .routes import router
 from .utils.rate_limit import RateLimiter
+
+logger = logging.getLogger(__name__)
+
+
+def _python_minor_version() -> str:
+    return f"{sys.version_info.major}.{sys.version_info.minor}"
+
+
+def _platform_name() -> str:
+    return platform.system().lower()
+
+
+def _default_backend_candidates(model: str):
+    descriptors = list_backend_descriptors()
+    prefix, sep, remainder = model.partition(":")
+    if sep:
+        return [
+            descriptor for descriptor in descriptors if descriptor.id == prefix
+        ], remainder
+    return [
+        descriptor
+        for descriptor in descriptors
+        if any(fnmatch.fnmatch(model, pattern) for pattern in descriptor.model_patterns)
+    ], model
+
+
+def _select_default_backend_descriptor(
+    candidates,
+    default_backend: str | None,
+):
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    if default_backend:
+        for descriptor in candidates:
+            if descriptor.id == default_backend:
+                return descriptor
+    return None
+
+
+def _log_startup_compatibility_diagnostics(config: ServerConfig) -> None:
+    candidates, resolved_model = _default_backend_candidates(config.default_model)
+    selected = _select_default_backend_descriptor(candidates, config.default_backend)
+
+    if selected is None:
+        if not candidates:
+            logger.warning(
+                "Default model '%s' does not match any backend pattern",
+                config.default_model,
+            )
+            return
+
+        candidate_ids = ", ".join(sorted(descriptor.id for descriptor in candidates))
+        if config.default_backend:
+            logger.warning(
+                "OPEN_ASR_DEFAULT_BACKEND='%s' does not match default model '%s' candidates (%s)",
+                config.default_backend,
+                config.default_model,
+                candidate_ids,
+            )
+            return
+
+        logger.warning(
+            "Default model '%s' is ambiguous across backends (%s); set OPEN_ASR_DEFAULT_BACKEND",
+            config.default_model,
+            candidate_ids,
+        )
+        return
+
+    hint = backend_install_hint(selected.id)
+    if hint is None:
+        logger.info(
+            "Default backend '%s' selected for model '%s'",
+            selected.id,
+            config.default_model,
+        )
+        return
+
+    has_nvidia, gpu_source = detect_nvidia_gpu()
+    status, reason = backend_runtime_status(
+        selected.id,
+        platform_name=_platform_name(),
+        python_version=_python_minor_version(),
+        has_nvidia=has_nvidia,
+    )
+
+    if status == "ready":
+        logger.info(
+            "Default backend '%s' selected for model '%s' (gpu=%s via %s)",
+            selected.id,
+            config.default_model,
+            "yes" if has_nvidia else "no",
+            gpu_source,
+        )
+        return
+
+    logger.warning(
+        "Default backend '%s' for model '%s' is %s (%s). Suggested install: %s",
+        selected.id,
+        resolved_model,
+        status,
+        reason or "unknown compatibility issue",
+        install_command(hint.extra, python=hint.python),
+    )
 
 
 def create_app(config: ServerConfig | None = None) -> FastAPI:
@@ -34,6 +149,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         eviction_task = None
         stop_event = asyncio.Event()
+        _log_startup_compatibility_diagnostics(config)
         # Startup: preload models if configured
         for model in config.preload_models:
             preload_backend(

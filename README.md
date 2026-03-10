@@ -65,6 +65,8 @@ uv tool run open-asr-server backends --json
 uv tool run open-asr-server setup --json
 ```
 
+For full stack compatibility guidance, see `docs/blessed-environments.md`.
+
 Notes:
 - `setup` auto-pins known-good Python versions for backend stacks (`metal`, `cpu`, `cuda`).
 - `backends` reports compatibility status (`ready`, `missing_deps`, `python_incompatible`, `platform_incompatible`, `requires_gpu`).
