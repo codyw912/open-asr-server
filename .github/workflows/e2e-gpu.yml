@@ -1,0 +1,52 @@
+name: E2E GPU
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "NeMo model ID for GPU E2E"
+        required: false
+        default: "nvidia/parakeet-tdt-0.6b-v3"
+      audio:
+        description: "Audio sample path"
+        required: false
+        default: "samples/jfk_0_5.flac"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  nemo-gpu-e2e:
+    runs-on: [self-hosted, linux, x64, nvidia-gpu]
+    timeout-minutes: 90
+    env:
+      UV_PYTHON: "3.11"
+      OPEN_ASR_RUN_GPU_E2E: "1"
+      OPEN_ASR_NEMO_E2E_MODEL: ${{ inputs.model }}
+      OPEN_ASR_E2E_AUDIO: ${{ inputs.audio }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Validate GPU availability
+        run: nvidia-smi
+
+      - name: Sync dependencies
+        run: uv sync --frozen --extra dev --extra nemo
+
+      - name: Run NeMo GPU E2E smoke test
+        run: uv run --frozen --extra dev --extra nemo pytest -m e2e_gpu tests/e2e/test_nemo_gpu.py -q

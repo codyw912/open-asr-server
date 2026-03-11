@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Extend `setup`/`doctor` flows to auto-pin known-good Python versions for CPU and CUDA stacks.
 - Unify uv index configuration in `pyproject.toml` and remove `uv.toml` to eliminate ambiguous index warnings.
 - Return structured runtime compatibility API errors (`backend_compatibility_error`) with compatibility context and install guidance.
+- Add an optional manual self-hosted NVIDIA GPU E2E workflow (`.github/workflows/e2e-gpu.yml`) for real NeMo transcription smoke validation.
 
 ## 0.3.0
 

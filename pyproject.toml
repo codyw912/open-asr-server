@@ -86,6 +86,7 @@ open-asr-server = "open_asr_server.cli:main"
 pythonpath = ["src"]
 markers = [
     "integration: live HTTP integration tests",
+    "e2e_gpu: GPU-backed end-to-end tests for self-hosted runners",
 ]
 
 [[tool.uv.index]]
