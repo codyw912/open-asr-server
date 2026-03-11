@@ -17,6 +17,7 @@ from .install_hints import (
     backend_install_hint,
     backend_runtime_status,
     bundle_install_hint,
+    detect_nvidia_gpu,
     install_command,
     install_command_args,
     install_command_args_for_extras,
@@ -166,30 +167,7 @@ def _collect_backend_statuses() -> list[BackendInstallStatus]:
 
 
 def _detect_nvidia_gpu() -> tuple[bool, str]:
-    try:
-        import torch  # type: ignore[import-not-found]
-
-        if hasattr(torch, "cuda") and torch.cuda.is_available():
-            return True, "torch"
-    except Exception:
-        pass
-
-    nvidia_smi = shutil.which("nvidia-smi")
-    if nvidia_smi:
-        try:
-            result = subprocess.run(
-                [nvidia_smi, "-L"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-                check=False,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return True, "nvidia-smi"
-        except Exception:
-            pass
-
-    return False, "none"
+    return detect_nvidia_gpu()
 
 
 def _recommend_quickstart_extra() -> QuickstartRecommendation:

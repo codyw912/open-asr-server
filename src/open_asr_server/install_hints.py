@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import shutil
+import subprocess
 from typing import Literal
 
 RuntimeStatus = Literal[
@@ -209,6 +211,33 @@ def backend_runtime_status(
         python_version=python_version,
         has_nvidia=has_nvidia,
     )
+
+
+def detect_nvidia_gpu() -> tuple[bool, str]:
+    try:
+        import torch  # type: ignore[import-not-found]
+
+        if hasattr(torch, "cuda") and torch.cuda.is_available():
+            return True, "torch"
+    except Exception:
+        pass
+
+    nvidia_smi = shutil.which("nvidia-smi")
+    if nvidia_smi:
+        try:
+            result = subprocess.run(
+                [nvidia_smi, "-L"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return True, "nvidia-smi"
+        except Exception:
+            pass
+
+    return False, "none"
 
 
 def install_command(extra: str, *, python: str | None = None) -> str:
