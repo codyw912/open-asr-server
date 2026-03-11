@@ -13,6 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from .backends import (
+    BackendCompatibilityError,
     BackendConflictError,
     BackendLoadError,
     BackendNotFoundError,
@@ -149,6 +150,25 @@ def _descriptor_to_metadata(descriptor, model_id: str) -> ModelMetadataEntry:
 
 
 def _backend_load_error_detail(exc: BackendLoadError) -> dict[str, Any]:
+    if isinstance(exc, BackendCompatibilityError):
+        return {
+            "type": "backend_compatibility_error",
+            "code": exc.code,
+            "message": exc.detail,
+            "backend": exc.backend_id,
+            "model": exc.model,
+            "retryable": exc.retryable,
+            "compatibility": {
+                "status": exc.compatibility_status,
+                "reason": exc.compatibility_reason,
+                "supported_platforms": exc.supported_platforms,
+                "supported_python": exc.supported_python,
+                "requires_nvidia": exc.requires_nvidia,
+                "notes": exc.compatibility_notes,
+                "suggested_install": exc.suggested_install,
+            },
+        }
+
     return {
         "type": "backend_load_error",
         "code": exc.code,
@@ -312,7 +332,11 @@ async def create_transcription(
         )
     except BackendLoadError as exc:
         raise HTTPException(
-            status_code=503 if exc.retryable else 500,
+            status_code=(
+                422
+                if isinstance(exc, BackendCompatibilityError)
+                else (503 if exc.retryable else 500)
+            ),
             detail=_backend_load_error_detail(exc),
         )
 

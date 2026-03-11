@@ -306,6 +306,10 @@ Load-time backend failures return structured `detail` payloads with retry hints:
 
 Current load error codes include `weights_only_incompat`, `model_load_oom`, and `backend_busy`.
 
+When a backend is incompatible with the current host/runtime, the API returns a
+`backend_compatibility_error` payload (HTTP `422`) with compatibility context
+and a suggested install command.
+
 `/v1/models/metadata` includes install hints for known backends (`install_extra`,
 `install_bundle`, `install_python`, `install_command`) so automation can guide
 setup without hardcoded backend mappings.

@@ -1,5 +1,6 @@
 import time
 import unittest
+from unittest.mock import patch
 
 try:
     from fastapi.testclient import TestClient as FastAPITestClient
@@ -7,6 +8,7 @@ except Exception as exc:
     raise unittest.SkipTest("fastapi not installed") from exc
 
 import open_asr_server.backends as backends
+import open_asr_server.install_hints as install_hints
 from open_asr_server.app import create_app
 from open_asr_server.backends.base import TranscriptionResult
 from open_asr_server.config import ServerConfig
@@ -386,6 +388,53 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(detail["code"], "weights_only_incompat")
         self.assertEqual(detail["retryable"], False)
         self.assertIn("unexpected config type", detail["message"])
+
+    def test_transcription_backend_compatibility_error_returns_422(self):
+        backends.register_backend(
+            backends.BackendDescriptor(
+                id="compat-backend",
+                display_name="Compat Backend",
+                model_patterns=["compat-model"],
+                device_types=["cpu"],
+            ),
+            lambda _: FakeBackend(),
+        )
+
+        with (
+            patch(
+                "open_asr_server.backends.backend_install_hint",
+                return_value=install_hints.BackendInstallHint(
+                    extra="cpu",
+                    python="3.11",
+                    compatibility=install_hints.RuntimeCompatibility(
+                        supported_platforms=("linux",),
+                        supported_python=("3.11",),
+                    ),
+                ),
+            ),
+            patch(
+                "open_asr_server.backends.backend_runtime_status",
+                return_value=("python_incompatible", "supported python: 3.11"),
+            ),
+        ):
+            client = self._client(ServerConfig(preload_models=[]))
+            files = {"file": ("audio.wav", b"test audio", "audio/wav")}
+            data = {"model": "compat-model", "response_format": "json"}
+            response = client.post("/v1/audio/transcriptions", data=data, files=files)
+
+        self.assertEqual(response.status_code, 422)
+        detail = response.json()["detail"]
+        self.assertEqual(detail["type"], "backend_compatibility_error")
+        self.assertEqual(detail["code"], "python_incompatible")
+        self.assertEqual(detail["retryable"], False)
+        self.assertEqual(detail["compatibility"]["status"], "python_incompatible")
+        self.assertEqual(
+            detail["compatibility"]["reason"],
+            "supported python: 3.11",
+        )
+        self.assertIn(
+            "open-asr-server[cpu]", detail["compatibility"]["suggested_install"]
+        )
 
     def test_admin_unload_model(self):
         self._register_backend("test-model")

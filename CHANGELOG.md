@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Improve CLI compatibility UX with richer backend status classification (`ready`, `missing_deps`, `python_incompatible`, `platform_incompatible`, `requires_gpu`).
 - Extend `setup`/`doctor` flows to auto-pin known-good Python versions for CPU and CUDA stacks.
 - Unify uv index configuration in `pyproject.toml` and remove `uv.toml` to eliminate ambiguous index warnings.
+- Return structured runtime compatibility API errors (`backend_compatibility_error`) with compatibility context and install guidance.
 
 ## 0.3.0
 

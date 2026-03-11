@@ -5,7 +5,9 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+import platform
 import threading
+import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -14,6 +16,12 @@ from typing import Any, Callable, Iterator, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..install_hints import (
+    backend_install_hint,
+    backend_runtime_status,
+    detect_nvidia_gpu,
+    install_command,
+)
 from .base import TranscriptionBackend
 
 logger = logging.getLogger(__name__)
@@ -164,6 +172,41 @@ class BackendBusyLoadError(BackendLoadError):
         )
 
 
+class BackendCompatibilityError(BackendLoadError):
+    """Backend is incompatible with current host/runtime."""
+
+    def __init__(
+        self,
+        backend_id: str,
+        model: str,
+        *,
+        status: str,
+        reason: str,
+        suggested_install: str,
+        supported_platforms: list[str] | None,
+        supported_python: list[str] | None,
+        requires_nvidia: bool,
+        compatibility_notes: str | None,
+    ):
+        super().__init__(
+            backend_id=backend_id,
+            model=model,
+            detail=(
+                f"Backend '{backend_id}' cannot run model '{model}' on this host: {reason}. "
+                f"Suggested install: {suggested_install}"
+            ),
+            code=status,
+            retryable=False,
+        )
+        self.compatibility_status = status
+        self.compatibility_reason = reason
+        self.suggested_install = suggested_install
+        self.supported_platforms = supported_platforms
+        self.supported_python = supported_python
+        self.requires_nvidia = requires_nvidia
+        self.compatibility_notes = compatibility_notes
+
+
 _backend_cache: dict[tuple[str, str], BackendCacheEntry] = {}
 _registered_backends: dict[str, RegisteredBackend] = {}
 _cache_lock = threading.Lock()
@@ -229,6 +272,50 @@ def _format_backend_spec(backend_id: str, model_id: str) -> str:
     return f"{backend_id}:{model_id}"
 
 
+def _python_minor_version() -> str:
+    return f"{sys.version_info.major}.{sys.version_info.minor}"
+
+
+def _platform_name() -> str:
+    return platform.system().lower()
+
+
+def _raise_if_backend_incompatible(backend_id: str, model_id: str) -> None:
+    hint = backend_install_hint(backend_id)
+    if hint is None:
+        return
+
+    has_nvidia, _gpu_source = detect_nvidia_gpu()
+    status, reason = backend_runtime_status(
+        backend_id,
+        platform_name=_platform_name(),
+        python_version=_python_minor_version(),
+        has_nvidia=has_nvidia,
+    )
+    if status == "ready":
+        return
+
+    raise BackendCompatibilityError(
+        backend_id=backend_id,
+        model=model_id,
+        status=status,
+        reason=reason or "runtime compatibility check failed",
+        suggested_install=install_command(hint.extra, python=hint.python),
+        supported_platforms=(
+            list(hint.compatibility.supported_platforms)
+            if hint.compatibility.supported_platforms
+            else None
+        ),
+        supported_python=(
+            list(hint.compatibility.supported_python)
+            if hint.compatibility.supported_python
+            else None
+        ),
+        requires_nvidia=hint.compatibility.requires_nvidia,
+        compatibility_notes=hint.compatibility.notes,
+    )
+
+
 def _get_or_create_entry(
     backend_id: str, model_id: str, *, pinned: bool
 ) -> BackendCacheEntry:
@@ -236,6 +323,7 @@ def _get_or_create_entry(
     with _cache_lock:
         entry = _backend_cache.get(key)
         if entry is None:
+            _raise_if_backend_incompatible(backend_id, model_id)
             backend = _registered_backends[backend_id].factory(model_id)
             entry = BackendCacheEntry(
                 backend=backend,
