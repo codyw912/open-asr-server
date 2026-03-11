@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import open_asr_server.backends as backends
+import open_asr_server.install_hints as install_hints
 from open_asr_server.backends import (
     faster_whisper,
     kyutai_mlx,
@@ -59,6 +60,60 @@ def test_backend_registry_matches_patterns(reset_backend_registry):
     backend = backends.get_backend("foo-bar")
 
     assert isinstance(backend, DummyBackend)
+
+
+def test_backend_raises_compatibility_error_before_factory(
+    reset_backend_registry, monkeypatch
+):
+    calls = {"factory": 0}
+
+    class DummyBackend:
+        def transcribe(self, *args, **kwargs):
+            raise NotImplementedError
+
+        @property
+        def supported_languages(self):
+            return None
+
+    def factory(_: str) -> DummyBackend:
+        calls["factory"] += 1
+        return DummyBackend()
+
+    descriptor = backends.BackendDescriptor(
+        id="compat-backend",
+        display_name="Compat Backend",
+        model_patterns=["compat-model"],
+        device_types=["cpu"],
+    )
+    backends.register_backend(descriptor, factory)
+
+    monkeypatch.setattr(
+        backends,
+        "backend_install_hint",
+        lambda _backend_id: install_hints.BackendInstallHint(
+            extra="cpu",
+            python="3.11",
+            compatibility=install_hints.RuntimeCompatibility(
+                supported_platforms=("linux",),
+                supported_python=("3.11",),
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        backends,
+        "backend_runtime_status",
+        lambda *_args, **_kwargs: (
+            "python_incompatible",
+            "supported python: 3.11",
+        ),
+    )
+
+    with pytest.raises(backends.BackendCompatibilityError) as exc_info:
+        backends.get_backend("compat-model")
+
+    assert calls["factory"] == 0
+    assert exc_info.value.code == "python_incompatible"
+    assert "open-asr-server[cpu]" in exc_info.value.suggested_install
 
 
 def test_entry_point_load_registers_backend(reset_backend_registry):

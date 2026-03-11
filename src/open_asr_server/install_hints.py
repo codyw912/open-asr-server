@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 import shutil
 import subprocess
 from typing import Literal
@@ -213,6 +214,7 @@ def backend_runtime_status(
     )
 
 
+@lru_cache(maxsize=1)
 def detect_nvidia_gpu() -> tuple[bool, str]:
     try:
         import torch  # type: ignore[import-not-found]
