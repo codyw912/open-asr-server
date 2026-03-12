@@ -39,6 +39,17 @@ CI checks on PRs and `main` include:
 - package build (`uv build --no-sources`)
 - coverage artifact generation
 
+Optional GPU E2E lane (manual, self-hosted runner):
+
+- Workflow: `.github/workflows/e2e-gpu.yml`
+- Runner labels: `self-hosted`, `linux`, `x64`, `nvidia-gpu`
+- Trigger from GitHub Actions `E2E GPU` with optional model/audio inputs
+- Test command run by workflow:
+
+```bash
+uv run --frozen --extra dev --extra nemo pytest -m e2e_gpu tests/e2e/test_nemo_gpu.py -q
+```
+
 - Keep tests hermetic by avoiding reliance on local env vars, caches, or model downloads.
 
 ## Pull requests
