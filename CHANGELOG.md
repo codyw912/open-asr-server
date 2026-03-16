@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Unify uv index configuration in `pyproject.toml` and remove `uv.toml` to eliminate ambiguous index warnings.
 - Return structured runtime compatibility API errors (`backend_compatibility_error`) with compatibility context and install guidance.
 - Add an optional manual self-hosted NVIDIA GPU E2E workflow (`.github/workflows/e2e-gpu.yml`) for real NeMo transcription smoke validation.
+- Add `scripts/runpod_gpu_e2e.sh` to automate RunPod template/pod launch, ephemeral runner registration, workflow dispatch, and teardown for GPU E2E runs.
 
 ## 0.3.0
 
