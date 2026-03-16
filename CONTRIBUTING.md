@@ -44,6 +44,7 @@ Optional GPU E2E lane (manual, self-hosted runner):
 - Workflow: `.github/workflows/e2e-gpu.yml`
 - Runner labels: `self-hosted`, `linux`, `x64`, `nvidia-gpu`
 - Trigger from GitHub Actions `E2E GPU` with optional model/audio inputs
+- Helper script to automate RunPod launch + workflow trigger: `scripts/runpod_gpu_e2e.sh`
 - Test command run by workflow:
 
 ```bash
